@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>星球防线 · 防守角色素材库</title>
+  <style>
+    * { box-sizing: border-box; letter-spacing: 0; }
+    :root { color-scheme: light; font: 15px/1.6 system-ui, sans-serif; color: #23332d; background: #f4f6f5; }
+    body { margin: 0; }
+    header, main, footer { max-width: 1040px; margin: auto; padding: 24px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    h2 { font-size: 20px; margin: 0; }
+    p { margin: 4px 0; color: #62726a; }
+    a { color: #12644a; text-underline-offset: 4px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 16px; border-block: 1px solid #d7ded9; padding: 14px 0; margin-top: 20px; }
+    main { padding-top: 0; }
+    section { padding: 24px 0; border-bottom: 1px solid #d7ded9; }
+    .heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    figure { margin: 0; min-width: 0; }
+    .stage { display: grid; place-items: center; aspect-ratio: 1; background: #34473c; border-radius: 4px; }
+    img { display: block; max-width: 100%; width: 220px; aspect-ratio: 1; object-fit: contain; }
+    figcaption { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+    .badge { color: #fff; background: #0009; padding: 1px 7px; font-size: 12px; border-radius: 3px; }
+    footer { font-size: 13px; }
+    @media (max-width: 640px) { header, main, footer { padding-inline: 16px; } .levels { grid-template-columns: 1fr; } h1 { font-size: 23px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>星球防线 · 防守角色素材库</h1>
+    <p>3 类职业 · 3 个等级 · 9 张透明角色图 · V1 原型</p>
+    <div class="toolbar">
+      <a href="README.md">素材说明</a>
+      <a href="defender-contact-sheet-v1.png">全部等级总览</a>
+      <a href="defender-atlas-v1.prompt.md">中文提示词</a>
+      <a href="defenders-v1.json">配置 JSON</a>
+    </div>
+  </header>
+  <main id="library"></main>
+  <footer>状态：AI 静态原型图，适合先接入兵营召唤、合体等级和 UI 效果；攻击动画后续单独补。</footer>
+  <script>
+    const defenders = [
+      { id: 'healer', name: '奶妈', role: '增益辅助 · 叠加 buff' },
+      { id: 'archer', name: '弓箭手', role: '单体输出 · 高频攻击' },
+      { id: 'frost-mage', name: '减速法师', role: '控制减速 · 冰霜弹道' }
+    ];
+    const library = document.querySelector('#library');
+    for (const defender of defenders) {
+      const section = document.createElement('section');
+      section.innerHTML = `<div class="heading"><div><h2>${defender.name}</h2><p>${defender.role}</p></div><a href="${defender.id}/levels-sheet-v1.png">等级图集</a></div><div class="levels"></div>`;
+      library.append(section);
+      const levels = section.querySelector('.levels');
+      for (let level = 1; level <= 3; level++) {
+        const figure = document.createElement('figure');
+        figure.innerHTML = `<div class="stage"><img src="${defender.id}/level-${level}.png" alt="${defender.name}${level}级"></div><figcaption><strong>${level} 级</strong><span class="badge">${level} / 3</span></figcaption>`;
+        levels.append(figure);
+      }
+    }
+  </script>
+</body>
+</html>

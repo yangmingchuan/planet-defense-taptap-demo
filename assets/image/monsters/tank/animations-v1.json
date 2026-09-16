@@ -1,0 +1,383 @@
+{
+  "version": 1,
+  "id": "tank",
+  "name": "肉怪兽",
+  "status": "AI动画初稿，待游戏内复查步态和细节连续性",
+  "frameIndexBase": 0,
+  "frameSize": {
+    "width": 256,
+    "height": 256
+  },
+  "pivotPixels": {
+    "x": 128,
+    "y": 232
+  },
+  "source": "animation-source-v1.png",
+  "sourceGrid": {
+    "columns": 3,
+    "rows": 4
+  },
+  "processing": {
+    "removeExteriorChecker": true,
+    "uniformScale": 0.6033519553072626,
+    "note": "统一缩放及脚底对齐，水平按轮廓居中；封闭缝隙和白边需人工复查。"
+  },
+  "clips": {
+    "walk": {
+      "sheet": "walk-sheet-v1.png",
+      "loop": true,
+      "frames": [
+        {
+          "file": "walk/01.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 18,
+            "top": 19,
+            "width": 335,
+            "height": 338
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 335,
+            "height": 338
+          },
+          "destinationRect": {
+            "left": 27,
+            "top": 28,
+            "width": 202,
+            "height": 204
+          },
+          "atlasRect": {
+            "x": 0,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/02.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 381,
+            "top": 50,
+            "width": 355,
+            "height": 292
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 355,
+            "height": 292
+          },
+          "destinationRect": {
+            "left": 21,
+            "top": 56,
+            "width": 214,
+            "height": 176
+          },
+          "atlasRect": {
+            "x": 256,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/03.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 759,
+            "top": 26,
+            "width": 307,
+            "height": 325
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 307,
+            "height": 325
+          },
+          "destinationRect": {
+            "left": 36,
+            "top": 36,
+            "width": 185,
+            "height": 196
+          },
+          "atlasRect": {
+            "x": 512,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/04.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 22,
+            "top": 373,
+            "width": 343,
+            "height": 329
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 343,
+            "height": 329
+          },
+          "destinationRect": {
+            "left": 25,
+            "top": 33,
+            "width": 207,
+            "height": 199
+          },
+          "atlasRect": {
+            "x": 768,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/05.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 381,
+            "top": 395,
+            "width": 349,
+            "height": 283
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 349,
+            "height": 283
+          },
+          "destinationRect": {
+            "left": 23,
+            "top": 61,
+            "width": 211,
+            "height": 171
+          },
+          "atlasRect": {
+            "x": 1024,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/06.png",
+          "durationMs": 166.66666666666666,
+          "sourceRect": {
+            "left": 758,
+            "top": 376,
+            "width": 314,
+            "height": 315
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 314,
+            "height": 315
+          },
+          "destinationRect": {
+            "left": 34,
+            "top": 42,
+            "width": 189,
+            "height": 190
+          },
+          "atlasRect": {
+            "x": 1280,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        }
+      ]
+    },
+    "attack": {
+      "sheet": "attack-sheet-v1.png",
+      "loop": false,
+      "frames": [
+        {
+          "file": "attack/01.png",
+          "durationMs": 160,
+          "sourceRect": {
+            "left": 26,
+            "top": 760,
+            "width": 332,
+            "height": 291
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 332,
+            "height": 291
+          },
+          "destinationRect": {
+            "left": 28,
+            "top": 56,
+            "width": 200,
+            "height": 176
+          },
+          "atlasRect": {
+            "x": 0,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/02.png",
+          "durationMs": 240,
+          "sourceRect": {
+            "left": 375,
+            "top": 766,
+            "width": 341,
+            "height": 284
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 341,
+            "height": 284
+          },
+          "destinationRect": {
+            "left": 25,
+            "top": 61,
+            "width": 206,
+            "height": 171
+          },
+          "atlasRect": {
+            "x": 256,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/03.png",
+          "durationMs": 220,
+          "sourceRect": {
+            "left": 751,
+            "top": 706,
+            "width": 302,
+            "height": 358
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 302,
+            "height": 358
+          },
+          "destinationRect": {
+            "left": 37,
+            "top": 16,
+            "width": 182,
+            "height": 216
+          },
+          "atlasRect": {
+            "x": 512,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/04.png",
+          "durationMs": 100,
+          "sourceRect": {
+            "left": 22,
+            "top": 1132,
+            "width": 330,
+            "height": 251
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 330,
+            "height": 251
+          },
+          "destinationRect": {
+            "left": 29,
+            "top": 81,
+            "width": 199,
+            "height": 151
+          },
+          "atlasRect": {
+            "x": 768,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/05.png",
+          "durationMs": 160,
+          "sourceRect": {
+            "left": 377,
+            "top": 1126,
+            "width": 347,
+            "height": 261
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 347,
+            "height": 261
+          },
+          "destinationRect": {
+            "left": 24,
+            "top": 75,
+            "width": 209,
+            "height": 157
+          },
+          "atlasRect": {
+            "x": 1024,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/06.png",
+          "durationMs": 220,
+          "sourceRect": {
+            "left": 752,
+            "top": 1081,
+            "width": 322,
+            "height": 307
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 322,
+            "height": 307
+          },
+          "destinationRect": {
+            "left": 31,
+            "top": 47,
+            "width": 194,
+            "height": 185
+          },
+          "atlasRect": {
+            "x": 1280,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        }
+      ],
+      "events": [
+        {
+          "name": "hit",
+          "frameIndex": 3,
+          "atMs": 620,
+          "oncePerAttack": true
+        }
+      ]
+    }
+  }
+}

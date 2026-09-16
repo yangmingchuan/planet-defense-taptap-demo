@@ -1,0 +1,383 @@
+{
+  "version": 1,
+  "id": "armored",
+  "name": "甲壳怪兽",
+  "status": "AI动画初稿，待游戏内复查步态和细节连续性",
+  "frameIndexBase": 0,
+  "frameSize": {
+    "width": 256,
+    "height": 256
+  },
+  "pivotPixels": {
+    "x": 128,
+    "y": 232
+  },
+  "source": "animation-source-v1.png",
+  "sourceGrid": {
+    "columns": 3,
+    "rows": 4
+  },
+  "processing": {
+    "removeExteriorChecker": true,
+    "uniformScale": 0.6686567164179105,
+    "note": "统一缩放及脚底对齐，水平按轮廓居中；封闭缝隙和白边需人工复查。"
+  },
+  "clips": {
+    "walk": {
+      "sheet": "walk-sheet-v1.png",
+      "loop": true,
+      "frames": [
+        {
+          "file": "walk/01.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 26,
+            "top": 37,
+            "width": 325,
+            "height": 304
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 325,
+            "height": 304
+          },
+          "destinationRect": {
+            "left": 20,
+            "top": 29,
+            "width": 217,
+            "height": 203
+          },
+          "atlasRect": {
+            "x": 0,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/02.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 379,
+            "top": 37,
+            "width": 329,
+            "height": 294
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 329,
+            "height": 294
+          },
+          "destinationRect": {
+            "left": 18,
+            "top": 35,
+            "width": 220,
+            "height": 197
+          },
+          "atlasRect": {
+            "x": 256,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/03.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 737,
+            "top": 37,
+            "width": 327,
+            "height": 303
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 327,
+            "height": 303
+          },
+          "destinationRect": {
+            "left": 19,
+            "top": 29,
+            "width": 219,
+            "height": 203
+          },
+          "atlasRect": {
+            "x": 512,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/04.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 24,
+            "top": 382,
+            "width": 326,
+            "height": 306
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 326,
+            "height": 306
+          },
+          "destinationRect": {
+            "left": 19,
+            "top": 27,
+            "width": 218,
+            "height": 205
+          },
+          "atlasRect": {
+            "x": 768,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/05.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 377,
+            "top": 386,
+            "width": 333,
+            "height": 302
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 333,
+            "height": 302
+          },
+          "destinationRect": {
+            "left": 17,
+            "top": 30,
+            "width": 223,
+            "height": 202
+          },
+          "atlasRect": {
+            "x": 1024,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "walk/06.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 738,
+            "top": 386,
+            "width": 328,
+            "height": 299
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 328,
+            "height": 299
+          },
+          "destinationRect": {
+            "left": 19,
+            "top": 32,
+            "width": 219,
+            "height": 200
+          },
+          "atlasRect": {
+            "x": 1280,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        }
+      ]
+    },
+    "attack": {
+      "sheet": "attack-sheet-v1.png",
+      "loop": false,
+      "frames": [
+        {
+          "file": "attack/01.png",
+          "durationMs": 200,
+          "sourceRect": {
+            "left": 25,
+            "top": 752,
+            "width": 327,
+            "height": 300
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 327,
+            "height": 300
+          },
+          "destinationRect": {
+            "left": 19,
+            "top": 31,
+            "width": 219,
+            "height": 201
+          },
+          "atlasRect": {
+            "x": 0,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/02.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 378,
+            "top": 748,
+            "width": 333,
+            "height": 293
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 333,
+            "height": 293
+          },
+          "destinationRect": {
+            "left": 17,
+            "top": 36,
+            "width": 223,
+            "height": 196
+          },
+          "atlasRect": {
+            "x": 256,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/03.png",
+          "durationMs": 150,
+          "sourceRect": {
+            "left": 737,
+            "top": 751,
+            "width": 334,
+            "height": 304
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 334,
+            "height": 304
+          },
+          "destinationRect": {
+            "left": 17,
+            "top": 29,
+            "width": 223,
+            "height": 203
+          },
+          "atlasRect": {
+            "x": 512,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/04.png",
+          "durationMs": 150,
+          "sourceRect": {
+            "left": 19,
+            "top": 1099,
+            "width": 335,
+            "height": 299
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 335,
+            "height": 299
+          },
+          "destinationRect": {
+            "left": 16,
+            "top": 32,
+            "width": 224,
+            "height": 200
+          },
+          "atlasRect": {
+            "x": 768,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/05.png",
+          "durationMs": 200,
+          "sourceRect": {
+            "left": 377,
+            "top": 1100,
+            "width": 331,
+            "height": 294
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 331,
+            "height": 294
+          },
+          "destinationRect": {
+            "left": 18,
+            "top": 35,
+            "width": 221,
+            "height": 197
+          },
+          "atlasRect": {
+            "x": 1024,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        },
+        {
+          "file": "attack/06.png",
+          "durationMs": 250,
+          "sourceRect": {
+            "left": 740,
+            "top": 1096,
+            "width": 329,
+            "height": 307
+          },
+          "sourceContentBounds": {
+            "left": 0,
+            "top": 0,
+            "width": 329,
+            "height": 307
+          },
+          "destinationRect": {
+            "left": 18,
+            "top": 27,
+            "width": 220,
+            "height": 205
+          },
+          "atlasRect": {
+            "x": 1280,
+            "y": 0,
+            "width": 256,
+            "height": 256
+          }
+        }
+      ],
+      "events": [
+        {
+          "name": "hit",
+          "frameIndex": 3,
+          "atMs": 600,
+          "oncePerAttack": true
+        }
+      ]
+    }
+  }
+}

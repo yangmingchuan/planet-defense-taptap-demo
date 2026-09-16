@@ -1,0 +1,33 @@
+{
+  "source": "wall-states-source-v1.png",
+  "frameSize": {
+    "width": 384,
+    "height": 256
+  },
+  "states": [
+    {
+      "id": "full",
+      "file": "states/full.png"
+    },
+    {
+      "id": "damaged",
+      "file": "states/damaged.png"
+    },
+    {
+      "id": "heavy-damaged",
+      "file": "states/heavy-damaged.png"
+    },
+    {
+      "id": "repaired",
+      "file": "states/repaired.png"
+    },
+    {
+      "id": "broken",
+      "file": "states/broken.png"
+    },
+    {
+      "id": "fortified",
+      "file": "states/fortified.png"
+    }
+  ]
+}

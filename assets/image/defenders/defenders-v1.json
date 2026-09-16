@@ -1,0 +1,148 @@
+{
+  "source": "defender-atlas-v1.png",
+  "sourceSize": {
+    "width": 1224,
+    "height": 1285
+  },
+  "frameSize": 256,
+  "cutMethod": "alpha connected components with per-component mask",
+  "roles": [
+    {
+      "id": "healer",
+      "name": "奶妈",
+      "level": 1,
+      "file": "healer/level-1.png",
+      "sourceRect": {
+        "left": 30,
+        "top": 79,
+        "width": 370,
+        "height": 342
+      },
+      "sourcePixels": 63968
+    },
+    {
+      "id": "archer",
+      "name": "弓箭手",
+      "level": 1,
+      "file": "archer/level-1.png",
+      "sourceRect": {
+        "left": 442,
+        "top": 16,
+        "width": 380,
+        "height": 404
+      },
+      "sourcePixels": 70162
+    },
+    {
+      "id": "frost-mage",
+      "name": "减速法师",
+      "level": 1,
+      "file": "frost-mage/level-1.png",
+      "sourceRect": {
+        "left": 824,
+        "top": 87,
+        "width": 372,
+        "height": 337
+      },
+      "sourcePixels": 69254
+    },
+    {
+      "id": "healer",
+      "name": "奶妈",
+      "level": 2,
+      "file": "healer/level-2.png",
+      "sourceRect": {
+        "left": 13,
+        "top": 430,
+        "width": 403,
+        "height": 419
+      },
+      "sourcePixels": 90042
+    },
+    {
+      "id": "archer",
+      "name": "弓箭手",
+      "level": 2,
+      "file": "archer/level-2.png",
+      "sourceRect": {
+        "left": 435,
+        "top": 421,
+        "width": 403,
+        "height": 431
+      },
+      "sourcePixels": 83718
+    },
+    {
+      "id": "frost-mage",
+      "name": "减速法师",
+      "level": 2,
+      "file": "frost-mage/level-2.png",
+      "sourceRect": {
+        "left": 871,
+        "top": 461,
+        "width": 343,
+        "height": 381
+      },
+      "sourcePixels": 85714
+    },
+    {
+      "id": "healer",
+      "name": "奶妈",
+      "level": 3,
+      "file": "healer/level-3.png",
+      "sourceRect": {
+        "left": 9,
+        "top": 839,
+        "width": 436,
+        "height": 433
+      },
+      "sourcePixels": 115597
+    },
+    {
+      "id": "archer",
+      "name": "弓箭手",
+      "level": 3,
+      "file": "archer/level-3.png",
+      "sourceRect": {
+        "left": 411,
+        "top": 846,
+        "width": 448,
+        "height": 430
+      },
+      "sourcePixels": 111655
+    },
+    {
+      "id": "frost-mage",
+      "name": "减速法师",
+      "level": 3,
+      "file": "frost-mage/level-3.png",
+      "sourceRect": {
+        "left": 820,
+        "top": 848,
+        "width": 395,
+        "height": 427
+      },
+      "sourcePixels": 109292
+    }
+  ],
+  "professions": [
+    {
+      "id": "healer",
+      "zh": "奶妈",
+      "en": "Healer Buff Support",
+      "file": "healer"
+    },
+    {
+      "id": "archer",
+      "zh": "弓箭手",
+      "en": "Archer Single Target DPS",
+      "file": "archer"
+    },
+    {
+      "id": "frost-mage",
+      "zh": "减速法师",
+      "en": "Frost Mage Slow Control",
+      "file": "frost-mage"
+    }
+  ]
+}

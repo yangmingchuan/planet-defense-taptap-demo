@@ -1,0 +1,57 @@
+{
+  "source": "event-icons-source-v1.png",
+  "frameSize": {
+    "width": 256,
+    "height": 256
+  },
+  "icons": [
+    {
+      "id": "attack-up",
+      "file": "icons/attack-up.png"
+    },
+    {
+      "id": "explosive-attack",
+      "file": "icons/explosive-attack.png"
+    },
+    {
+      "id": "attack-speed",
+      "file": "icons/attack-speed.png"
+    },
+    {
+      "id": "wall-fortify",
+      "file": "icons/wall-fortify.png"
+    },
+    {
+      "id": "armor-pierce",
+      "file": "icons/armor-pierce.png"
+    },
+    {
+      "id": "merge-keep",
+      "file": "icons/merge-keep.png"
+    },
+    {
+      "id": "cooldown-reduce",
+      "file": "icons/cooldown-reduce.png"
+    },
+    {
+      "id": "planet-will",
+      "file": "icons/planet-will.png"
+    },
+    {
+      "id": "healer-repair",
+      "file": "icons/healer-repair.png"
+    },
+    {
+      "id": "healer-buff",
+      "file": "icons/healer-buff.png"
+    },
+    {
+      "id": "multi-arrow",
+      "file": "icons/multi-arrow.png"
+    },
+    {
+      "id": "frost-slow",
+      "file": "icons/frost-slow.png"
+    }
+  ]
+}

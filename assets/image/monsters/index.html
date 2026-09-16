@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>星球防线 · 怪兽素材库</title>
+  <style>
+    * { box-sizing: border-box; letter-spacing: 0; }
+    :root { color-scheme: light; font: 15px/1.6 system-ui, sans-serif; color: #23332d; background: #f4f6f5; }
+    body { margin: 0; }
+    header, main, footer { max-width: 1120px; margin: auto; padding: 24px; }
+    header { padding-bottom: 16px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    h2 { font-size: 20px; margin: 0; }
+    p { margin: 4px 0; color: #62726a; }
+    a { color: #12644a; text-underline-offset: 4px; }
+    .toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; border-block: 1px solid #d7ded9; padding: 14px 0; margin-top: 20px; }
+    label { display: flex; align-items: center; gap: 8px; }
+    input[type="range"] { width: 130px; accent-color: #24795b; }
+    input[type="checkbox"] { accent-color: #24795b; width: 18px; height: 18px; }
+    input[type="color"] { width: 32px; height: 28px; padding: 1px; border: 1px solid #bdc8c1; background: none; }
+    output { min-width: 3em; }
+    main { padding-top: 0; }
+    section { padding: 24px 0; border-bottom: 1px solid #d7ded9; }
+    .heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+    .links { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; }
+    .clips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    figure { margin: 0; min-width: 0; }
+    .stage { background: var(--stage, #34473c); display: grid; place-items: center; aspect-ratio: 1.65; min-height: 220px; position: relative; border-radius: 4px; }
+    canvas { display: block; width: 224px; max-width: 100%; aspect-ratio: 1; }
+    .badge { position: absolute; right: 12px; bottom: 9px; color: #fff; background: #0009; padding: 1px 7px; font-size: 12px; border-radius: 3px; }
+    figcaption { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; gap: 8px; }
+    .frames { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+    .frames a { display: block; min-width: 0; background: #e4eae6; border-bottom: 2px solid transparent; }
+    .frames a.active { border-color: #238456; background: #cde3d4; }
+    .frames img { display: block; width: 100%; aspect-ratio: 1; }
+    .error { color: #b22c36; }
+    footer { font-size: 13px; }
+    @media (max-width: 640px) { header, main, footer { padding-inline: 16px; } .clips { grid-template-columns: 1fr; } .stage { aspect-ratio: 1.5; } h1 { font-size: 23px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>星球防线 · 怪兽素材库</h1>
+    <p>4 种怪兽 · 8 组动作 · 48 张透明帧 · V1 动画初稿</p>
+    <div class="toolbar">
+      <label><input id="playing" type="checkbox" checked> 自动播放</label>
+      <label>速度 <input id="speed" type="range" min="0.25" max="2" step="0.25" value="1"><output id="speed-value">1×</output></label>
+      <label>背景 <input id="background" type="color" value="#34473c"></label>
+      <a href="README.md">素材说明</a>
+      <a href="contact-sheet-v1.png">全部帧总览</a>
+    </div>
+  </header>
+  <main id="library"></main>
+  <footer>状态：AI 动画初稿，部分步态与细节仍需修整。攻击在此页重复展示；游戏中按单次攻击播放。</footer>
+  <script>
+    const monsters = [
+      { id: 'basic', name: '小怪兽', role: '普通杂兵', fps: 8, attack: [120,140,70,80,130,160] },
+      { id: 'tank', name: '肉怪兽', role: '高血量 · 重步 · 双拳砸击', fps: 6, attack: [160,240,220,100,160,220] },
+      { id: 'armored', name: '甲壳怪兽', role: '高防御 · 慢移动 · 短拳', fps: 4, attack: [200,250,150,150,200,250] },
+      { id: 'agile', name: '敏捷怪兽', role: '低血量 · 快跑 · 抓挠', fps: 12, attack: [70,90,50,60,90,120] }
+    ];
+    const library = document.querySelector('#library');
+    const playing = document.querySelector('#playing');
+    const speed = document.querySelector('#speed');
+    const players = [];
+    for (const monster of monsters) {
+      const section = document.createElement('section');
+      section.innerHTML = `<div class="heading"><div><h2>${monster.name}</h2><p>${monster.role}</p></div><div class="links"><a href="${monster.id}/portrait-v1.png">立绘</a><a href="${monster.id}/animation-v1.prompt.md">中文提示词</a><a href="${monster.id}/animations-v1.json">播放配置</a></div></div><div class="clips"></div>`;
+      library.append(section);
+      for (const action of ['walk','attack']) {
+        const name = action === 'walk' ? '行走' : '攻击';
+        const figure = document.createElement('figure');
+        figure.innerHTML = `<div class="stage"><canvas width="256" height="256" aria-label="${monster.name}${name}动画"></canvas><span class="badge">载入中</span></div><figcaption><strong>${name}</strong><a href="${monster.id}/${action}-sheet-v1.png">六帧图集</a></figcaption><div class="frames"></div>`;
+        section.querySelector('.clips').append(figure);
+        const image = new Image();
+        const player = { image, context: figure.querySelector('canvas').getContext('2d'), action,
+          durations: action === 'walk' ? Array(6).fill(1000 / monster.fps) : monster.attack,
+          badge: figure.querySelector('.badge'), links: [], elapsed: 0, frame: -1, ready: false };
+        for (let i = 0; i < 6; i++) {
+          const link = document.createElement('a');
+          const file = `${monster.id}/${action}/${String(i+1).padStart(2,'0')}.png`;
+          link.href = file; link.title = `${name}第 ${i+1} 帧`;
+          link.innerHTML = `<img src="${file}" alt="${monster.name}${name}第${i+1}帧">`;
+          player.links.push(link); figure.querySelector('.frames').append(link);
+        }
+        image.onload = () => { player.ready = true; draw(player, 0); };
+        image.onerror = () => { player.badge.textContent = '素材载入失败'; figure.classList.add('error'); };
+        image.src = `${monster.id}/${action}-sheet-v1.png`;
+        players.push(player);
+      }
+    }
+    function draw(player, frame) {
+      player.context.clearRect(0,0,256,256);
+      player.context.drawImage(player.image,frame*256,0,256,256,0,0,256,256);
+      player.frame = frame;
+      player.context.canvas.dataset.frame = frame;
+      player.badge.textContent = `${frame+1} / 6${player.action === 'attack' && frame === 3 ? ' · 命中' : ''}`;
+      player.links.forEach((link,i) => link.classList.toggle('active',i === frame));
+    }
+    speed.oninput = () => { document.querySelector('#speed-value').textContent = `${speed.value}×`; };
+    document.querySelector('#background').oninput = e => { document.documentElement.style.setProperty('--stage',e.target.value); };
+    let previous = performance.now();
+    function tick(now) {
+      const delta = Math.min(now - previous, 100); previous = now;
+      if (playing.checked) for (const player of players) {
+        if (!player.ready) continue;
+        player.elapsed += delta * Number(speed.value);
+        let t = player.elapsed % player.durations.reduce((a,b) => a+b,0);
+        let frame = 0;
+        while (frame < 5 && t >= player.durations[frame]) t -= player.durations[frame++];
+        if (frame !== player.frame) draw(player,frame);
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "basic",
+    "frameCount": 12,
+    "sourceSize": [
+      1086,
+      1448
+    ],
+    "backgroundRemovedPixels": 884534,
+    "uniformScale": 0.627906976744186
+  },
+  {
+    "id": "tank",
+    "frameCount": 12,
+    "sourceSize": [
+      1086,
+      1448
+    ],
+    "backgroundRemovedPixels": 781752,
+    "uniformScale": 0.6033519553072626
+  },
+  {
+    "id": "armored",
+    "frameCount": 12,
+    "sourceSize": [
+      1086,
+      1448
+    ],
+    "backgroundRemovedPixels": 764892,
+    "uniformScale": 0.6686567164179105
+  },
+  {
+    "id": "agile",
+    "frameCount": 12,
+    "sourceSize": [
+      1086,
+      1448
+    ],
+    "backgroundRemovedPixels": 1100091,
+    "uniformScale": 0.6153846153846154
+  }
+]
