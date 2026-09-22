@@ -23,9 +23,9 @@ local defenderTypes = {
     archer = {
         name = "弓箭手",
         color = { 122, 224, 95 },
-        attack = { 18, 32, 55 },
-        cooldown = { 1.0, 0.88, 0.72 },
-        range = 560,
+        attack = { 9, 22, 42 },
+        cooldown = { 1.15, 0.95, 0.78 },
+        range = 500,
     },
     healer = {
         name = "奶妈",
@@ -36,7 +36,7 @@ local defenderTypes = {
     mage = {
         name = "法师",
         color = { 105, 210, 255 },
-        attack = { 10, 18, 30 },
+        attack = { 8, 17, 30 },
         cooldown = { 1.55, 1.35, 1.12 },
         range = 500,
         slow = { 0.20, 0.30, 0.40 },
@@ -44,11 +44,11 @@ local defenderTypes = {
 }
 
 local monsterTypes = {
-    basic = { name = "小怪兽", hp = 30, speed = 55, defense = 0, damage = 1, silver = 12, color = { 80, 190, 100 }, walkFrameTime = 0.125, attackDuration = 0.85 },
-    agile = { name = "敏捷怪兽", hp = 22, speed = 90, defense = 0, damage = 1, silver = 14, color = { 90, 235, 210 }, walkFrameTime = 0.083, attackDuration = 0.65 },
-    tank = { name = "肉怪兽", hp = 120, speed = 36, defense = 0, damage = 2, silver = 30, color = { 180, 120, 210 }, walkFrameTime = 0.167, attackDuration = 1.15 },
-    armored = { name = "甲壳怪兽", hp = 90, speed = 28, defense = 12, damage = 1, silver = 34, color = { 210, 175, 88 }, walkFrameTime = 0.250, attackDuration = 1.30 },
-    boss = { name = "星核破坏者", hp = 700, speed = 24, defense = 8, damage = 5, silver = 120, color = { 210, 95, 70 }, walkFrameTime = 0.180, attackDuration = 1.40 },
+    basic = { name = "小怪兽", hp = 55, speed = 58, defense = 0, damage = 1, silver = 12, color = { 80, 190, 100 }, walkFrameTime = 0.125, attackDuration = 0.85 },
+    agile = { name = "敏捷怪兽", hp = 38, speed = 95, defense = 0, damage = 1, silver = 14, color = { 90, 235, 210 }, walkFrameTime = 0.083, attackDuration = 0.65 },
+    tank = { name = "肉怪兽", hp = 165, speed = 38, defense = 0, damage = 2, silver = 30, color = { 180, 120, 210 }, walkFrameTime = 0.167, attackDuration = 1.15 },
+    armored = { name = "甲壳怪兽", hp = 135, speed = 30, defense = 12, damage = 1, silver = 34, color = { 210, 175, 88 }, walkFrameTime = 0.250, attackDuration = 1.30 },
+    boss = { name = "星核破坏者", hp = 900, speed = 26, defense = 8, damage = 5, silver = 120, color = { 210, 95, 70 }, walkFrameTime = 0.180, attackDuration = 1.40 },
 }
 
 local events = {
@@ -925,7 +925,7 @@ function ShowToast(text)
 end
 
 function RebuildLayout(width, height)
-    local scale = math.max(width / DESIGN_W, height / DESIGN_H)
+    local scale = math.min(width / DESIGN_W, height / DESIGN_H)
     local drawW = DESIGN_W * scale
     local drawH = DESIGN_H * scale
     local dx = (width - drawW) * 0.5
@@ -1008,16 +1008,16 @@ function DrawScene(ctx, width, height)
 end
 
 function DrawBackground(ctx, width, height)
+    nvgBeginPath(ctx)
+    nvgRect(ctx, 0, 0, width, height)
+    nvgFillColor(ctx, nvgRGBA(10, 15, 25, 255))
+    nvgFill(ctx)
+
     local img = images.background
     if img ~= nil then
         nvgBeginPath(ctx)
-        nvgRect(ctx, 0, 0, width, height)
+        nvgRect(ctx, layout.dx, layout.dy, layout.drawW, layout.drawH)
         nvgFillPaint(ctx, nvgImagePattern(ctx, layout.dx, layout.dy, layout.drawW, layout.drawH, 0, img, 1))
-        nvgFill(ctx)
-    else
-        nvgBeginPath(ctx)
-        nvgRect(ctx, 0, 0, width, height)
-        nvgFillColor(ctx, nvgRGBA(18, 25, 38, 255))
         nvgFill(ctx)
     end
 end
@@ -1077,10 +1077,17 @@ function DrawDefender(ctx, d, x, y)
     local sx, sy = ToScreen(x, y)
     local size = (72 + d.level * 8) * layout.scale
     local img = images[d.kind .. d.level]
+    local actionProgress = 0
     if d.action ~= nil and d.actionDuration > 0 then
-        local progress = math.min(0.999, d.actionTime / d.actionDuration)
-        local frame = math.min(DEFENDER_ATTACK_FRAMES, math.floor(progress * DEFENDER_ATTACK_FRAMES) + 1)
-        img = images[d.kind .. "_attack_" .. d.level .. "_" .. frame] or img
+        actionProgress = math.min(0.999, d.actionTime / d.actionDuration)
+        if d.kind ~= "mage" then
+            local frame = math.min(DEFENDER_ATTACK_FRAMES, math.floor(actionProgress * DEFENDER_ATTACK_FRAMES) + 1)
+            img = images[d.kind .. "_attack_" .. d.level .. "_" .. frame] or img
+        else
+            local pulse = math.sin(actionProgress * math.pi)
+            size = size * (1 + pulse * 0.035)
+            sy = sy - pulse * 3 * layout.scale
+        end
     end
 
     nvgBeginPath(ctx)
@@ -1101,7 +1108,26 @@ function DrawDefender(ctx, d, x, y)
         nvgFill(ctx)
     end
 
+    if d.kind == "mage" and d.action ~= nil then
+        DrawMageCastEffect(ctx, sx, sy, actionProgress, d.level)
+    end
+
     DrawText(ctx, tostring(d.level), x + 34, y - 34, 17, { 255, 240, 150 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawMageCastEffect(ctx, sx, sy, progress, level)
+    local pulse = math.sin(progress * math.pi)
+    local radius = (20 + level * 4 + pulse * 10) * layout.scale
+    local alpha = math.floor(80 + pulse * 150)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy - 12 * layout.scale, radius)
+    nvgStrokeColor(ctx, nvgRGBA(130, 225, 255, alpha))
+    nvgStrokeWidth(ctx, (1.5 + level * 0.5) * layout.scale)
+    nvgStroke(ctx)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy - (38 + pulse * 8) * layout.scale, (4 + level) * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(205, 250, 255, alpha))
+    nvgFill(ctx)
 end
 
 function DrawMonsters(ctx)
