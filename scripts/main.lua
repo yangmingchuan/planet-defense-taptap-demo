@@ -402,6 +402,7 @@ end
 
 function UpdateDefenders(dt)
     for i, d in pairs(game.defenders) do
+        d.mergeTime = math.max(0, (d.mergeTime or 0) - dt)
         if d ~= dragDefender() then
             d.buffTime = math.max(0, (d.buffTime or 0) - dt)
             if d.buffTime <= 0 then
@@ -793,6 +794,10 @@ function HandleMouseUp(eventType, eventData)
             local nextKind = target.kind == defender.kind and target.kind or RandomDefenderKind()
             game.defenders[targetSlot] = CreateDefender(nextKind, target.level + 1, targetSlot)
             game.defenders[sourceSlot] = nil
+            local targetDefender = game.defenders[targetSlot]
+            targetDefender.mergeTime = 0.65
+            SpawnParticle(slotDefs[sourceSlot].x, slotDefs[sourceSlot].y - 18, 44, { 120, 230, 255 })
+            SpawnParticle(slotDefs[targetSlot].x, slotDefs[targetSlot].y - 18, 64, { 255, 220, 100 })
             AddFloat(slotDefs[targetSlot].x, slotDefs[targetSlot].y - 55, "合体 " .. (target.level + 1), { 255, 230, 120 })
             if target.level + 1 == 3 then
                 OpenClassEvent(nextKind)
@@ -905,6 +910,7 @@ function CreateDefender(kind, level, slot)
         buffTime = 0,
         buffAttack = 0,
         buffSpeed = 0,
+        mergeTime = 0,
     }
 end
 
@@ -1080,10 +1086,10 @@ function DrawDefender(ctx, d, x, y)
     local actionProgress = 0
     if d.action ~= nil and d.actionDuration > 0 then
         actionProgress = math.min(0.999, d.actionTime / d.actionDuration)
-        if d.kind ~= "mage" then
+        if d.kind ~= "mage" and d.level ~= 2 then
             local frame = math.min(DEFENDER_ATTACK_FRAMES, math.floor(actionProgress * DEFENDER_ATTACK_FRAMES) + 1)
             img = images[d.kind .. "_attack_" .. d.level .. "_" .. frame] or img
-        else
+        elseif d.kind == "mage" then
             local pulse = math.sin(actionProgress * math.pi)
             size = size * (1 + pulse * 0.035)
             sy = sy - pulse * 3 * layout.scale
@@ -1096,11 +1102,10 @@ function DrawDefender(ctx, d, x, y)
     nvgFillColor(ctx, nvgRGBA(c[1], c[2], c[3], d.buffTime > 0 and 120 or 70))
     nvgFill(ctx)
 
-    if img ~= nil then
-        nvgBeginPath(ctx)
-        nvgRect(ctx, sx - size * 0.5, sy - size * 0.72, size, size)
-        nvgFillPaint(ctx, nvgImagePattern(ctx, sx - size * 0.5, sy - size * 0.72, size, size, 0, img, 1))
-        nvgFill(ctx)
+    if d.level == 2 then
+        DrawLevelTwoPair(ctx, d, sx, sy, size, actionProgress)
+    elseif img ~= nil then
+        DrawDefenderSprite(ctx, img, sx, sy, size)
     else
         nvgBeginPath(ctx)
         nvgCircle(ctx, sx, sy - 15 * layout.scale, 24 * layout.scale)
@@ -1112,7 +1117,62 @@ function DrawDefender(ctx, d, x, y)
         DrawMageCastEffect(ctx, sx, sy, actionProgress, d.level)
     end
 
-    DrawText(ctx, tostring(d.level), x + 34, y - 34, 17, { 255, 240, 150 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    if d.level == 3 then
+        DrawEliteRing(ctx, sx, sy, d.mergeTime)
+    end
+    if d.mergeTime > 0 then
+        DrawMergeAura(ctx, sx, sy, d.mergeTime)
+    end
+
+    local levelLabel = d.level == 1 and "I" or (d.level == 2 and "II" or "III")
+    DrawText(ctx, levelLabel, x + 34, y - 34, 15, { 255, 240, 150 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawDefenderSprite(ctx, img, sx, sy, size)
+    nvgBeginPath(ctx)
+    nvgRect(ctx, sx - size * 0.5, sy - size * 0.72, size, size)
+    nvgFillPaint(ctx, nvgImagePattern(ctx, sx - size * 0.5, sy - size * 0.72, size, size, 0, img, 1))
+    nvgFill(ctx)
+end
+
+function DrawLevelTwoPair(ctx, d, sx, sy, size, actionProgress)
+    local leftImage = images[d.kind .. "1"]
+    local rightImage = leftImage
+    local pairSize = size * 0.76
+    local offset = 18 * layout.scale
+    if d.action ~= nil and d.kind ~= "mage" then
+        local frame = math.min(DEFENDER_ATTACK_FRAMES, math.floor(actionProgress * DEFENDER_ATTACK_FRAMES) + 1)
+        local delayedFrame = math.min(DEFENDER_ATTACK_FRAMES, (frame % DEFENDER_ATTACK_FRAMES) + 1)
+        leftImage = images[d.kind .. "_attack_1_" .. frame] or leftImage
+        rightImage = images[d.kind .. "_attack_1_" .. delayedFrame] or rightImage
+    end
+    DrawDefenderSprite(ctx, leftImage, sx - offset, sy + 2 * layout.scale, pairSize)
+    DrawDefenderSprite(ctx, rightImage, sx + offset, sy - 3 * layout.scale, pairSize)
+end
+
+function DrawEliteRing(ctx, sx, sy, mergeTime)
+    local pulse = mergeTime > 0 and 1 or (0.72 + math.sin(os.clock() * 3.2) * 0.12)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy + 8 * layout.scale, 40 * layout.scale * pulse)
+    nvgStrokeColor(ctx, nvgRGBA(255, 218, 90, 175))
+    nvgStrokeWidth(ctx, 2 * layout.scale)
+    nvgStroke(ctx)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy + 8 * layout.scale, 31 * layout.scale * pulse)
+    nvgStrokeColor(ctx, nvgRGBA(120, 235, 255, 110))
+    nvgStrokeWidth(ctx, 1.2 * layout.scale)
+    nvgStroke(ctx)
+end
+
+function DrawMergeAura(ctx, sx, sy, remaining)
+    local progress = 1 - remaining / 0.65
+    local radius = (24 + progress * 42) * layout.scale
+    local alpha = math.floor((1 - progress) * 210)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy - 8 * layout.scale, radius)
+    nvgStrokeColor(ctx, nvgRGBA(255, 238, 125, alpha))
+    nvgStrokeWidth(ctx, (3 - progress * 1.5) * layout.scale)
+    nvgStroke(ctx)
 end
 
 function DrawMageCastEffect(ctx, sx, sy, progress, level)
