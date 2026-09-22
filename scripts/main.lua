@@ -48,7 +48,7 @@ local monsterTypes = {
     agile = { name = "敏捷怪兽", hp = 38, speed = 95, defense = 0, damage = 1, silver = 14, color = { 90, 235, 210 }, walkFrameTime = 0.083, attackDuration = 0.65 },
     tank = { name = "肉怪兽", hp = 165, speed = 38, defense = 0, damage = 2, silver = 30, color = { 180, 120, 210 }, walkFrameTime = 0.167, attackDuration = 1.15 },
     armored = { name = "甲壳怪兽", hp = 135, speed = 30, defense = 12, damage = 1, silver = 34, color = { 210, 175, 88 }, walkFrameTime = 0.250, attackDuration = 1.30 },
-    boss = { name = "星核破坏者", hp = 900, speed = 26, defense = 8, damage = 5, silver = 120, color = { 210, 95, 70 }, walkFrameTime = 0.180, attackDuration = 1.40 },
+    boss = { name = "星核破坏者", hp = 480, speed = 26, defense = 3, damage = 2, silver = 120, color = { 210, 95, 70 }, walkFrameTime = 0.180, attackDuration = 1.40 },
 }
 
 local events = {
@@ -222,6 +222,8 @@ function LoadImages()
             LoadImage("monster_" .. id .. "_attack_" .. frame, string.format("assets/image/monsters/%s/attack/%02d.png", id, frame))
         end
     end
+    -- Boss art is not generated yet; use the heavy monster portrait instead of a red fallback circle.
+    LoadImage("monster_boss", "assets/image/monsters/tank/portrait-v1.png")
 end
 
 function ResetGame()
@@ -306,7 +308,7 @@ end
 
 function StartNextWave()
     game.wave = game.wave + 1
-    game.spawnRemaining = 4 + game.wave * 2
+    game.spawnRemaining = game.wave == 10 and 9 or (4 + game.wave * 2)
     game.spawnTimer = 0.1
     game.silver = game.silver + 20
     AddFloat(180, 1420, "+20 波次奖励", { 255, 230, 120 })
@@ -317,7 +319,7 @@ end
 
 function SpawnMonsterForWave()
     local id = "basic"
-    if game.wave == 10 then
+    if game.wave == 10 and game.spawnRemaining == 1 then
         id = "boss"
     elseif game.wave >= 7 and math.random() < 0.30 then
         id = "armored"
@@ -333,8 +335,8 @@ function SpawnMonsterForWave()
         id = id,
         x = x,
         y = 250,
-        hp = src.hp + game.wave * (id == "boss" and 28 or 5),
-        maxHp = src.hp + game.wave * (id == "boss" and 28 or 5),
+        hp = src.hp + game.wave * (id == "boss" and 10 or 5),
+        maxHp = src.hp + game.wave * (id == "boss" and 10 or 5),
         speed = src.speed,
         defense = src.defense,
         damage = src.damage,
