@@ -241,6 +241,8 @@ function ResetGame()
         projectiles = {},
         floats = {},
         particles = {},
+        iceBlasts = {},
+        ultimateQueue = {},
         eventChoices = nil,
         selectedDefender = nil,
         wallMax = 60,
@@ -405,11 +407,13 @@ end
 function UpdateDefenders(dt)
     for i, d in pairs(game.defenders) do
         d.mergeTime = math.max(0, (d.mergeTime or 0) - dt)
+        d.ultimateFlash = math.max(0, (d.ultimateFlash or 0) - dt)
         if d ~= dragDefender() then
             d.buffTime = math.max(0, (d.buffTime or 0) - dt)
             if d.buffTime <= 0 then
                 d.buffAttack = 0
                 d.buffSpeed = 0
+                d.buffSource = nil
             end
             if d.action ~= nil then
                 UpdateDefenderAction(i, d, dt)
@@ -474,6 +478,7 @@ function ReleaseDefenderAction(slotIndex, d)
                 duration = 4.0 + d.level * 0.6,
                 attack = 0.10 + game.bonuses.healerAttack,
                 speed = 0.10 + game.bonuses.healerSpeed,
+                owner = d,
             })
         elseif game.wallHp < game.wallMax then
             game.wallHp = math.min(game.wallMax, game.wallHp + 1)
@@ -493,6 +498,7 @@ function ReleaseDefenderAction(slotIndex, d)
             damage = dmg,
             explosion = game.bonuses.archerExplosion > 0 and math.random() < game.bonuses.archerExplosion,
             pierce = d.level == 3 or game.bonuses.archerPierce > 0,
+            owner = d,
         })
     elseif d.kind == "mage" then
         local dmg = (defenderTypes.mage.attack[d.level] + game.bonuses.attackFlat) * (1 + game.bonuses.mageDamage)
@@ -502,6 +508,7 @@ function ReleaseDefenderAction(slotIndex, d)
             slowTime = 1.6 + d.level * 0.25,
             slowRatio = math.min(0.75, defenderTypes.mage.slow[d.level] + 0.05),
             freeze = math.random() < game.bonuses.freezeChance,
+            owner = d,
         })
     end
 end
@@ -538,34 +545,34 @@ function FindBestBuffTarget(excludeSlot)
     return best
 end
 
-function DamageMonster(m, amount, damageType)
+function DamageMonster(m, amount, damageType, owner)
     if m == nil or m.dead then return false end
     local final = math.max(1, amount - (damageType == "physical" and m.defense or m.defense * 0.5))
     m.hp = m.hp - final
     if m.hp <= 0 then
-        KillMonster(m)
+        KillMonster(m, owner)
         return true
     end
     return false
 end
 
-function AreaDamage(x, y, radius, amount)
+function AreaDamage(x, y, radius, amount, owner)
     for i = #game.monsters, 1, -1 do
         local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
-            DamageMonster(m, amount, "magic")
+            DamageMonster(m, amount, "magic", owner)
         end
     end
     SpawnParticle(x, y, radius, { 255, 160, 70 })
 end
 
-function AreaSlow(x, y, radius, amount)
+function AreaSlow(x, y, radius, amount, owner)
     for i = #game.monsters, 1, -1 do
         local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
-            DamageMonster(m, amount, "magic")
+            DamageMonster(m, amount, "magic", owner)
             if not m.dead then
                 m.slowTime = math.max(m.slowTime, 1.2)
                 m.slowRatio = math.max(m.slowRatio, 0.35)
@@ -575,7 +582,111 @@ function AreaSlow(x, y, radius, amount)
     SpawnParticle(x, y, radius, { 90, 220, 255 })
 end
 
-function KillMonster(monster)
+function GainRage(defender, amount)
+    if defender == nil or defender.level ~= 3 or not IsDefenderActive(defender) then return end
+    local before = defender.rage or 0
+    defender.rage = math.min(100, before + amount)
+    if before < 100 and defender.rage >= 100 then
+        table.insert(game.ultimateQueue, defender)
+        defender.ultimateFlash = 1.2
+        local slot = slotDefs[defender.slot]
+        AddFloat(slot.x, slot.y - 70, "终极就绪", { 255, 220, 100 })
+        SpawnParticle(slot.x, slot.y - 20, 76, { 255, 220, 100 })
+    end
+end
+
+function GetReadyUltimate()
+    while #game.ultimateQueue > 0 do
+        local queued = game.ultimateQueue[1]
+        if IsDefenderActive(queued) and queued.level == 3 and (queued.rage or 0) >= 100 then
+            return queued
+        end
+        table.remove(game.ultimateQueue, 1)
+    end
+    for _, defender in pairs(game.defenders) do
+        if defender.level == 3 and (defender.rage or 0) >= 100 then
+            return defender
+        end
+    end
+    return nil
+end
+
+function GetHighestRageDefender()
+    local best = nil
+    for _, defender in pairs(game.defenders) do
+        if defender.level == 3 and (best == nil or defender.rage > best.rage) then
+            best = defender
+        end
+    end
+    return best
+end
+
+function UltimateName(kind)
+    if kind == "archer" then return "星辉重箭" end
+    if kind == "mage" then return "绝对零域" end
+    return "生命超载"
+end
+
+function CastReadyUltimate()
+    local defender = GetReadyUltimate()
+    if defender == nil then
+        ShowToast("三级角色击杀怪兽可积攒怒气")
+        return
+    end
+
+    local target = defender.kind == "healer" and nil or FindTarget(defender)
+    if defender.kind ~= "healer" and target == nil then
+        ShowToast("没有可锁定的怪兽")
+        return
+    end
+
+    defender.rage = 0
+    defender.ultimateFlash = 0.8
+    if game.ultimateQueue[1] == defender then table.remove(game.ultimateQueue, 1) end
+    local start = slotDefs[defender.slot]
+    if defender.kind == "archer" then
+        CreateProjectile("star_arrow", start.x, start.y - 35, target, {
+            damage = 150,
+            owner = defender,
+        })
+        AddFloat(start.x, start.y - 76, "星辉重箭", { 255, 220, 95 })
+    elseif defender.kind == "mage" then
+        CastFrostUltimate(defender, target.x, target.y)
+    else
+        game.wallHp = math.min(game.wallMax, game.wallHp + 8)
+        for _, ally in pairs(game.defenders) do
+            ally.buffTime = math.max(ally.buffTime or 0, 7.0)
+            ally.buffAttack = math.max(ally.buffAttack or 0, 0.25)
+            ally.buffSpeed = math.max(ally.buffSpeed or 0, 0.25)
+            ally.buffSource = defender
+            local slot = slotDefs[ally.slot]
+            SpawnParticle(slot.x, slot.y - 15, 62, { 155, 255, 105 })
+        end
+        AddFloat(start.x, start.y - 76, "生命超载", { 160, 255, 120 })
+        SpawnParticle(start.x, start.y - 20, 118, { 160, 255, 120 })
+    end
+end
+
+function CastFrostUltimate(defender, x, y)
+    local radius = 205 + game.bonuses.mageArea
+    table.insert(game.iceBlasts, { x = x, y = y, radius = radius, life = 1.05, maxLife = 1.05 })
+    for i = #game.monsters, 1, -1 do
+        local monster = game.monsters[i]
+        local dx, dy = monster.x - x, monster.y - y
+        if dx * dx + dy * dy <= radius * radius then
+            DamageMonster(monster, 68, "magic", defender)
+            if not monster.dead then
+                monster.slowTime = math.max(monster.slowTime, 3.2)
+                monster.slowRatio = math.max(monster.slowRatio, 0.82)
+                monster.freezeTime = monster.id == "boss" and 0.75 or 1.8
+            end
+        end
+    end
+    AddFloat(x, y - 58, "绝对零域", { 175, 245, 255 })
+    SpawnParticle(x, y, radius * 0.62, { 125, 235, 255 })
+end
+
+function KillMonster(monster, owner)
     if monster == nil or monster.dead then return end
     monster.dead = true
     for i = #game.monsters, 1, -1 do
@@ -583,6 +694,10 @@ function KillMonster(monster)
             table.remove(game.monsters, i)
             game.silver = game.silver + monster.silver
             game.kills = game.kills + 1
+            GainRage(owner, monster.id == "boss" and 50 or 25)
+            if owner ~= nil and owner.buffSource ~= nil then
+                GainRage(owner.buffSource, monster.id == "boss" and 20 or 10)
+            end
             AddFloat(monster.x, monster.y - 25, "+" .. monster.silver, { 255, 230, 120 })
             SpawnParticle(monster.x, monster.y, 45, { 255, 230, 120 })
             return
@@ -614,7 +729,7 @@ function UpdateProjectiles(dt)
 end
 
 function CreateProjectile(kind, x, y, target, payload)
-    local speed = kind == "arrow" and 1050 or (kind == "frost" and 720 or 560)
+    local speed = kind == "star_arrow" and 1320 or (kind == "arrow" and 1050 or (kind == "frost" and 720 or 560))
     table.insert(game.projectiles, {
         kind = kind,
         x = x,
@@ -661,6 +776,7 @@ function ResolveProjectile(p)
             target.buffTime = payload.duration
             target.buffAttack = payload.attack
             target.buffSpeed = payload.speed
+            target.buffSource = payload.owner
             local slot = slotDefs[target.slot]
             AddFloat(slot.x, slot.y - 52, "祝福", { 255, 230, 120 })
             SpawnParticle(slot.x, slot.y - 15, 58, { 155, 255, 105 })
@@ -671,17 +787,21 @@ function ResolveProjectile(p)
     local target = p.target
     if not IsMonsterAlive(target) then return end
     local x, y = target.x, target.y
-    if p.kind == "arrow" then
-        DamageMonster(target, payload.damage, "physical")
+    if p.kind == "star_arrow" then
+        DamageMonster(target, payload.damage, "physical", payload.owner)
+        AreaDamage(x, y, 155, payload.damage * 0.55, payload.owner)
+        SpawnParticle(x, y, 155, { 255, 205, 85 })
+    elseif p.kind == "arrow" then
+        DamageMonster(target, payload.damage, "physical", payload.owner)
         if payload.explosion then
-            AreaDamage(x, y, 75, payload.damage * 0.45)
+            AreaDamage(x, y, 75, payload.damage * 0.45, payload.owner)
         end
         if payload.pierce then
-            AreaDamage(x, y - 90, 55, payload.damage * 0.35)
+            AreaDamage(x, y - 90, 55, payload.damage * 0.35, payload.owner)
         end
         SpawnParticle(x, y, payload.explosion and 75 or 24, payload.explosion and { 255, 160, 70 } or { 170, 255, 120 })
     elseif p.kind == "frost" then
-        DamageMonster(target, payload.damage, "magic")
+        DamageMonster(target, payload.damage, "magic", payload.owner)
         if IsMonsterAlive(target) then
             target.slowTime = payload.slowTime
             target.slowRatio = payload.slowRatio
@@ -691,7 +811,7 @@ function ResolveProjectile(p)
             end
         end
         if payload.level == 3 then
-            AreaSlow(x, y, 75 + game.bonuses.mageArea, payload.damage * 0.40)
+            AreaSlow(x, y, 75 + game.bonuses.mageArea, payload.damage * 0.40, payload.owner)
         else
             SpawnParticle(x, y, 36, { 90, 220, 255 })
         end
@@ -717,6 +837,11 @@ function UpdateEffects(dt)
         local p = game.particles[i]
         p.life = p.life - dt
         if p.life <= 0 then table.remove(game.particles, i) end
+    end
+    for i = #game.iceBlasts, 1, -1 do
+        local blast = game.iceBlasts[i]
+        blast.life = blast.life - dt
+        if blast.life <= 0 then table.remove(game.iceBlasts, i) end
     end
 end
 
@@ -753,6 +878,10 @@ function HandleMouseDown(eventType, eventData)
     end
     if HitRect(x, y, layout.barracksButton) then
         SummonDefender()
+        return
+    end
+    if HitRect(x, y, layout.lordButton) then
+        CastReadyUltimate()
         return
     end
 
@@ -912,7 +1041,10 @@ function CreateDefender(kind, level, slot)
         buffTime = 0,
         buffAttack = 0,
         buffSpeed = 0,
+        buffSource = nil,
         mergeTime = 0,
+        rage = 0,
+        ultimateFlash = 0,
     }
 end
 
@@ -1007,6 +1139,7 @@ function DrawScene(ctx, width, height)
     DrawMonsters(ctx)
     DrawDefenders(ctx)
     DrawProjectiles(ctx)
+    DrawIceBlasts(ctx)
     DrawParticles(ctx)
     DrawBottomHud(ctx)
     DrawFloats(ctx)
@@ -1039,7 +1172,15 @@ function DrawBottomHud(ctx)
     DrawPill(ctx, 26, 1408, 238, 52, "银币 " .. game.silver, { 35, 42, 55, 210 }, { 255, 225, 130 })
     DrawPill(ctx, 28, 1473, 236, 46, "事件 " .. game.eventCost, { 20, 70, 90, 185 }, { 120, 235, 255 })
     DrawPill(ctx, 682, 1473, 232, 46, "召唤 " .. game.summonCost, { 20, 70, 90, 185 }, { 120, 235, 255 })
-    DrawPill(ctx, 336, 1432, 270, 42, "领主机甲", { 35, 42, 55, 185 }, { 220, 235, 255 })
+    local ready = GetReadyUltimate()
+    local charging = GetHighestRageDefender()
+    if ready ~= nil then
+        DrawPill(ctx, 336, 1432, 270, 42, "终极: " .. UltimateName(ready.kind), { 110, 54, 22, 230 }, { 255, 230, 110 })
+    elseif charging ~= nil then
+        DrawPill(ctx, 336, 1432, 270, 42, "怒气 " .. math.floor(charging.rage) .. "/100", { 35, 72, 94, 210 }, { 160, 235, 255 })
+    else
+        DrawPill(ctx, 336, 1432, 270, 42, "终极: 三级击杀充能", { 35, 42, 55, 185 }, { 170, 200, 220 })
+    end
     DrawPill(ctx, 342, 1482, 258, 40, "第 " .. game.wave .. "/" .. MAX_WAVES .. " 波", { 35, 42, 55, 185 }, { 255, 255, 255 })
 end
 
@@ -1121,6 +1262,7 @@ function DrawDefender(ctx, d, x, y)
 
     if d.level == 3 then
         DrawEliteRing(ctx, sx, sy, d.mergeTime)
+        DrawRageMeter(ctx, d, sx, sy)
     end
     if d.mergeTime > 0 then
         DrawMergeAura(ctx, sx, sy, d.mergeTime)
@@ -1128,6 +1270,29 @@ function DrawDefender(ctx, d, x, y)
 
     local levelLabel = d.level == 1 and "I" or (d.level == 2 and "II" or "III")
     DrawText(ctx, levelLabel, x + 34, y - 34, 15, { 255, 240, 150 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawRageMeter(ctx, d, sx, sy)
+    local ratio = math.max(0, math.min(1, (d.rage or 0) / 100))
+    local w = 62 * layout.scale
+    local h = 6 * layout.scale
+    local x = sx - w * 0.5
+    local y = sy + 37 * layout.scale
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, x, y, w, h, h * 0.5)
+    nvgFillColor(ctx, nvgRGBA(17, 24, 38, 220))
+    nvgFill(ctx)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, x, y, w * ratio, h, h * 0.5)
+    nvgFillColor(ctx, nvgRGBA(255, 188, 70, 245))
+    nvgFill(ctx)
+    if ratio >= 1 then
+        local pulse = 0.65 + math.sin(game.time * 12) * 0.35
+        nvgBeginPath(ctx)
+        nvgCircle(ctx, sx, sy - 38 * layout.scale, (8 + pulse * 5) * layout.scale)
+        nvgFillColor(ctx, nvgRGBA(255, 220, 100, 190))
+        nvgFill(ctx)
+    end
 end
 
 function DrawDefenderSprite(ctx, img, sx, sy, size)
@@ -1222,13 +1387,7 @@ function DrawMonsters(ctx)
         end
 
         if m.freezeTime > 0 then
-            nvgBeginPath(ctx)
-            nvgCircle(ctx, sx, sy - 5 * layout.scale, (m.radius + 8) * layout.scale)
-            nvgFillColor(ctx, nvgRGBA(100, 220, 255, 65))
-            nvgFill(ctx)
-            nvgStrokeColor(ctx, nvgRGBA(170, 245, 255, 210))
-            nvgStrokeWidth(ctx, 2 * layout.scale)
-            nvgStroke(ctx)
+            DrawFrozenShell(ctx, sx, sy, m.radius)
         end
 
         local hpRatio = math.max(0, m.hp / m.maxHp)
@@ -1251,7 +1410,24 @@ function DrawProjectiles(ctx)
         local length = math.max(0.001, math.sqrt(dx * dx + dy * dy))
         local ux, uy = dx / length, dy / length
 
-        if p.kind == "arrow" then
+        if p.kind == "star_arrow" then
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx - ux * 74 * layout.scale, sy - uy * 74 * layout.scale)
+            nvgLineTo(ctx, sx, sy)
+            nvgStrokeColor(ctx, nvgRGBA(255, 185, 55, 120))
+            nvgStrokeWidth(ctx, 15 * layout.scale)
+            nvgStroke(ctx)
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx - ux * 62 * layout.scale, sy - uy * 62 * layout.scale)
+            nvgLineTo(ctx, sx, sy)
+            nvgStrokeColor(ctx, nvgRGBA(255, 240, 160, 255))
+            nvgStrokeWidth(ctx, 7 * layout.scale)
+            nvgStroke(ctx)
+            nvgBeginPath(ctx)
+            nvgCircle(ctx, sx, sy, 10 * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(255, 250, 205, 255))
+            nvgFill(ctx)
+        elseif p.kind == "arrow" then
             nvgBeginPath(ctx)
             nvgMoveTo(ctx, sx - ux * 24 * layout.scale, sy - uy * 24 * layout.scale)
             nvgLineTo(ctx, sx, sy)
@@ -1288,6 +1464,57 @@ function DrawProjectiles(ctx)
             nvgFillColor(ctx, nvgRGBA(225, 255, 145, 245))
             nvgFill(ctx)
         end
+    end
+end
+
+function DrawIceBlasts(ctx)
+    for _, blast in ipairs(game.iceBlasts) do
+        local progress = 1 - blast.life / blast.maxLife
+        local sx, sy = ToScreen(blast.x, blast.y)
+        local radius = (18 + blast.radius * progress) * layout.scale
+        local alpha = math.floor(190 * (1 - progress))
+        nvgBeginPath(ctx)
+        nvgCircle(ctx, sx, sy, radius)
+        nvgFillColor(ctx, nvgRGBA(105, 225, 255, math.floor(alpha * 0.24)))
+        nvgFill(ctx)
+        nvgStrokeColor(ctx, nvgRGBA(185, 250, 255, alpha))
+        nvgStrokeWidth(ctx, (5 - progress * 3) * layout.scale)
+        nvgStroke(ctx)
+        for shard = 0, 5 do
+            local angle = shard * math.pi / 3 + progress * 0.35
+            local ux, uy = math.cos(angle), math.sin(angle)
+            local px, py = -uy, ux
+            local inner = radius * 0.42
+            local outer = radius * 0.96
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx + ux * outer, sy + uy * outer)
+            nvgLineTo(ctx, sx + ux * inner + px * 10 * layout.scale, sy + uy * inner + py * 10 * layout.scale)
+            nvgLineTo(ctx, sx + ux * inner - px * 10 * layout.scale, sy + uy * inner - py * 10 * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(190, 250, 255, math.floor(alpha * 0.78)))
+            nvgFill(ctx)
+        end
+    end
+end
+
+function DrawFrozenShell(ctx, sx, sy, radius)
+    local r = (radius + 10) * layout.scale
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx, sy - 5 * layout.scale, r)
+    nvgFillColor(ctx, nvgRGBA(100, 220, 255, 72))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(185, 250, 255, 220))
+    nvgStrokeWidth(ctx, 2 * layout.scale)
+    nvgStroke(ctx)
+    for shard = 0, 3 do
+        local angle = shard * math.pi * 0.5 + game.time * 0.7
+        local ux, uy = math.cos(angle), math.sin(angle)
+        local px, py = -uy, ux
+        nvgBeginPath(ctx)
+        nvgMoveTo(ctx, sx + ux * r * 1.18, sy - 5 * layout.scale + uy * r * 1.18)
+        nvgLineTo(ctx, sx + ux * r * 0.48 + px * 8 * layout.scale, sy - 5 * layout.scale + uy * r * 0.48 + py * 8 * layout.scale)
+        nvgLineTo(ctx, sx + ux * r * 0.48 - px * 8 * layout.scale, sy - 5 * layout.scale + uy * r * 0.48 - py * 8 * layout.scale)
+        nvgFillColor(ctx, nvgRGBA(190, 250, 255, 190))
+        nvgFill(ctx)
     end
 end
 
