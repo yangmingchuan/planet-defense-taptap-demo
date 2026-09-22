@@ -5,6 +5,8 @@ local UI = require("urhox-libs/UI")
 local DESIGN_W = 942
 local DESIGN_H = 1670
 local MAX_WAVES = 10
+local MONSTER_ANIMATION_FRAMES = 6
+local DEFENDER_ATTACK_FRAMES = 6
 
 local nvgContext = nil
 local fontId = -1
@@ -42,11 +44,11 @@ local defenderTypes = {
 }
 
 local monsterTypes = {
-    basic = { name = "小怪兽", hp = 30, speed = 55, defense = 0, damage = 1, silver = 12, color = { 80, 190, 100 } },
-    agile = { name = "敏捷怪兽", hp = 22, speed = 90, defense = 0, damage = 1, silver = 14, color = { 90, 235, 210 } },
-    tank = { name = "肉怪兽", hp = 120, speed = 36, defense = 0, damage = 2, silver = 30, color = { 180, 120, 210 } },
-    armored = { name = "甲壳怪兽", hp = 90, speed = 28, defense = 12, damage = 1, silver = 34, color = { 210, 175, 88 } },
-    boss = { name = "星核破坏者", hp = 700, speed = 24, defense = 8, damage = 5, silver = 120, color = { 210, 95, 70 } },
+    basic = { name = "小怪兽", hp = 30, speed = 55, defense = 0, damage = 1, silver = 12, color = { 80, 190, 100 }, walkFrameTime = 0.125, attackDuration = 0.85 },
+    agile = { name = "敏捷怪兽", hp = 22, speed = 90, defense = 0, damage = 1, silver = 14, color = { 90, 235, 210 }, walkFrameTime = 0.083, attackDuration = 0.65 },
+    tank = { name = "肉怪兽", hp = 120, speed = 36, defense = 0, damage = 2, silver = 30, color = { 180, 120, 210 }, walkFrameTime = 0.167, attackDuration = 1.15 },
+    armored = { name = "甲壳怪兽", hp = 90, speed = 28, defense = 12, damage = 1, silver = 34, color = { 210, 175, 88 }, walkFrameTime = 0.250, attackDuration = 1.30 },
+    boss = { name = "星核破坏者", hp = 700, speed = 24, defense = 8, damage = 5, silver = 120, color = { 210, 95, 70 }, walkFrameTime = 0.180, attackDuration = 1.40 },
 }
 
 local events = {
@@ -205,11 +207,20 @@ function LoadImages()
     for id, folder in pairs(map) do
         for level = 1, 3 do
             LoadImage(id .. level, "assets/image/defenders/" .. folder .. "/level-" .. level .. ".png")
+            for frame = 1, DEFENDER_ATTACK_FRAMES do
+                local key = id .. "_attack_" .. level .. "_" .. frame
+                local path = string.format("assets/image/defenders/%s/attack/level-%d-%02d.png", folder, level, frame)
+                LoadImage(key, path)
+            end
         end
     end
 
     for _, id in ipairs({ "basic", "agile", "tank", "armored" }) do
         LoadImage("monster_" .. id, "assets/image/monsters/" .. id .. "/portrait-v1.png")
+        for frame = 1, MONSTER_ANIMATION_FRAMES do
+            LoadImage("monster_" .. id .. "_walk_" .. frame, string.format("assets/image/monsters/%s/walk/%02d.png", id, frame))
+            LoadImage("monster_" .. id .. "_attack_" .. frame, string.format("assets/image/monsters/%s/attack/%02d.png", id, frame))
+        end
     end
 end
 
@@ -333,6 +344,10 @@ function SpawnMonsterForWave()
         freezeTime = 0,
         attackTimer = 0,
         radius = id == "boss" and 46 or 28,
+        animState = "walk",
+        animTime = math.random() * src.walkFrameTime * MONSTER_ANIMATION_FRAMES,
+        attackApplied = false,
+        dead = false,
     })
 end
 
@@ -343,84 +358,148 @@ function UpdateMonsters(dt)
         if m.freezeTime > 0 then
             m.freezeTime = m.freezeTime - dt
         elseif m.y < wallY then
+            if m.animState ~= "walk" then
+                m.animState = "walk"
+                m.animTime = 0
+            end
+            m.animTime = m.animTime + dt
             local slow = m.slowTime > 0 and m.slowRatio or 0
             m.y = m.y + m.speed * (1 - slow) * dt
             m.slowTime = math.max(0, m.slowTime - dt)
         else
-            m.attackTimer = m.attackTimer - dt
-            if m.attackTimer <= 0 then
-                m.attackTimer = 1.0
-                game.wallHp = game.wallHp - m.damage
-                AddFloat(m.x, wallY - 20, "-" .. m.damage, { 255, 90, 80 })
-                if game.wallHp <= 0 then
-                    game.coreHp = game.coreHp - m.damage
+            local duration = monsterTypes[m.id].attackDuration
+            if m.animState ~= "attack" then
+                m.animState = "attack"
+                m.animTime = 0
+                m.attackApplied = false
+            end
+            m.animTime = m.animTime + dt
+            if not m.attackApplied and m.animTime >= duration * 0.58 then
+                m.attackApplied = true
+                ApplyMonsterAttack(m, wallY)
+                if m.dead then
                     table.remove(game.monsters, i)
-                    AddFloat(470, 1340, "星核 -" .. m.damage, { 255, 80, 80 })
                 end
             end
+            if not m.dead and m.animTime >= duration then
+                m.animTime = m.animTime - duration
+                m.attackApplied = false
+            end
         end
+    end
+end
+
+function ApplyMonsterAttack(m, wallY)
+    game.wallHp = game.wallHp - m.damage
+    AddFloat(m.x, wallY - 20, "-" .. m.damage, { 255, 90, 80 })
+    SpawnParticle(m.x, wallY, 30 + m.damage * 3, { 255, 105, 75 })
+    if game.wallHp <= 0 then
+        game.coreHp = game.coreHp - m.damage
+        m.dead = true
+        AddFloat(470, 1340, "星核 -" .. m.damage, { 255, 80, 80 })
     end
 end
 
 function UpdateDefenders(dt)
     for i, d in pairs(game.defenders) do
         if d ~= dragDefender() then
-            d.cooldown = math.max(0, d.cooldown - dt)
             d.buffTime = math.max(0, (d.buffTime or 0) - dt)
-            if d.cooldown <= 0 then
-                ActDefender(i, d)
+            if d.buffTime <= 0 then
+                d.buffAttack = 0
+                d.buffSpeed = 0
+            end
+            if d.action ~= nil then
+                UpdateDefenderAction(i, d, dt)
+            else
+                d.cooldown = math.max(0, d.cooldown - dt)
+                if d.cooldown <= 0 then
+                    BeginDefenderAction(i, d)
+                end
             end
         end
     end
 end
 
-function ActDefender(slotIndex, d)
+function BeginDefenderAction(slotIndex, d)
+    local speedBonus = 1 + game.bonuses.attackSpeed + (d.buffSpeed or 0)
+    local interval = defenderTypes[d.kind].cooldown[d.level] / speedBonus
+    local target = nil
+    local action = d.kind
+
     if d.kind == "healer" then
-        d.cooldown = defenderTypes.healer.cooldown[d.level]
-        local target = FindBestBuffTarget(slotIndex)
-        if target then
-            target.buffTime = 4.0 + d.level * 0.6
-            target.buffAttack = 0.10 + game.bonuses.healerAttack
-            target.buffSpeed = 0.10 + game.bonuses.healerSpeed
-            AddFloat(slotDefs[slotIndex].x, slotDefs[slotIndex].y - 45, "祝福", { 255, 230, 120 })
+        target = FindBestBuffTarget(slotIndex)
+        if target == nil and game.wallHp >= game.wallMax then
+            d.cooldown = 0.35
+            return
+        end
+    else
+        target = FindTarget(d)
+        if target == nil then
+            d.cooldown = 0.12
+            return
+        end
+    end
+
+    d.action = action
+    d.actionTime = 0
+    d.actionDuration = math.min(0.65, math.max(0.32, interval * 0.72))
+    d.actionInterval = interval
+    d.actionReleased = false
+    d.actionTarget = target
+end
+
+function UpdateDefenderAction(slotIndex, d, dt)
+    d.actionTime = d.actionTime + dt
+    local progress = math.min(1, d.actionTime / d.actionDuration)
+    if not d.actionReleased and progress >= 0.62 then
+        d.actionReleased = true
+        ReleaseDefenderAction(slotIndex, d)
+    end
+    if progress >= 1 then
+        d.cooldown = math.max(0.05, d.actionInterval - d.actionDuration)
+        d.action = nil
+        d.actionTarget = nil
+    end
+end
+
+function ReleaseDefenderAction(slotIndex, d)
+    local start = slotDefs[slotIndex]
+    if d.kind == "healer" then
+        if d.actionTarget ~= nil and IsDefenderActive(d.actionTarget) then
+            CreateProjectile("blessing", start.x, start.y - 35, d.actionTarget, {
+                level = d.level,
+                duration = 4.0 + d.level * 0.6,
+                attack = 0.10 + game.bonuses.healerAttack,
+                speed = 0.10 + game.bonuses.healerSpeed,
+            })
         elseif game.wallHp < game.wallMax then
             game.wallHp = math.min(game.wallMax, game.wallHp + 1)
-            AddFloat(slotDefs[slotIndex].x, slotDefs[slotIndex].y - 45, "修墙 +1", { 120, 255, 160 })
+            AddFloat(start.x, start.y - 45, "修墙 +1", { 120, 255, 160 })
+            SpawnParticle(start.x, start.y, 48, { 120, 255, 160 })
         end
         return
     end
 
-    local target = FindTarget(d)
-    if target == nil then return end
+    local target = d.actionTarget
+    if not IsMonsterAlive(target) then return end
 
     if d.kind == "archer" then
-        local speedBonus = 1 + game.bonuses.attackSpeed + (d.buffSpeed or 0)
-        d.cooldown = defenderTypes.archer.cooldown[d.level] / speedBonus
         local dmg = defenderTypes.archer.attack[d.level] + game.bonuses.attackFlat
         dmg = dmg * (1 + (d.buffAttack or 0))
-        DamageMonster(target, dmg, "physical")
-        CreateProjectile(slotDefs[d.slot].x, slotDefs[d.slot].y - 35, target.x, target.y, { 145, 255, 120 })
-        if game.bonuses.archerExplosion > 0 and math.random() < game.bonuses.archerExplosion then
-            AreaDamage(target.x, target.y, 75, dmg * 0.45)
-        end
-        if d.level == 3 or game.bonuses.archerPierce > 0 then
-            AreaDamage(target.x, target.y - 90, 55, dmg * 0.35)
-        end
+        CreateProjectile("arrow", start.x, start.y - 35, target, {
+            damage = dmg,
+            explosion = game.bonuses.archerExplosion > 0 and math.random() < game.bonuses.archerExplosion,
+            pierce = d.level == 3 or game.bonuses.archerPierce > 0,
+        })
     elseif d.kind == "mage" then
-        local speedBonus = 1 + game.bonuses.attackSpeed + (d.buffSpeed or 0)
-        d.cooldown = defenderTypes.mage.cooldown[d.level] / speedBonus
         local dmg = (defenderTypes.mage.attack[d.level] + game.bonuses.attackFlat) * (1 + game.bonuses.mageDamage)
-        DamageMonster(target, dmg, "magic")
-        target.slowTime = 1.6 + d.level * 0.25
-        target.slowRatio = math.min(0.75, defenderTypes.mage.slow[d.level] + 0.05)
-        CreateProjectile(slotDefs[d.slot].x, slotDefs[d.slot].y - 35, target.x, target.y, { 115, 220, 255 })
-        if d.level == 3 then
-            AreaSlow(target.x, target.y, 75 + game.bonuses.mageArea, dmg * 0.40)
-        end
-        if math.random() < game.bonuses.freezeChance then
-            target.freezeTime = target.id == "boss" and 0.35 or 0.9
-            AddFloat(target.x, target.y - 30, "冻结", { 150, 230, 255 })
-        end
+        CreateProjectile("frost", start.x, start.y - 35, target, {
+            damage = dmg,
+            level = d.level,
+            slowTime = 1.6 + d.level * 0.25,
+            slowRatio = math.min(0.75, defenderTypes.mage.slow[d.level] + 0.05),
+            freeze = math.random() < game.bonuses.freezeChance,
+        })
     end
 end
 
@@ -457,15 +536,19 @@ function FindBestBuffTarget(excludeSlot)
 end
 
 function DamageMonster(m, amount, damageType)
+    if m == nil or m.dead then return false end
     local final = math.max(1, amount - (damageType == "physical" and m.defense or m.defense * 0.5))
     m.hp = m.hp - final
     if m.hp <= 0 then
         KillMonster(m)
+        return true
     end
+    return false
 end
 
 function AreaDamage(x, y, radius, amount)
-    for _, m in ipairs(game.monsters) do
+    for i = #game.monsters, 1, -1 do
+        local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
             DamageMonster(m, amount, "magic")
@@ -475,18 +558,23 @@ function AreaDamage(x, y, radius, amount)
 end
 
 function AreaSlow(x, y, radius, amount)
-    for _, m in ipairs(game.monsters) do
+    for i = #game.monsters, 1, -1 do
+        local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
             DamageMonster(m, amount, "magic")
-            m.slowTime = math.max(m.slowTime, 1.2)
-            m.slowRatio = math.max(m.slowRatio, 0.35)
+            if not m.dead then
+                m.slowTime = math.max(m.slowTime, 1.2)
+                m.slowRatio = math.max(m.slowRatio, 0.35)
+            end
         end
     end
     SpawnParticle(x, y, radius, { 90, 220, 255 })
 end
 
 function KillMonster(monster)
+    if monster == nil or monster.dead then return end
+    monster.dead = true
     for i = #game.monsters, 1, -1 do
         if game.monsters[i] == monster then
             table.remove(game.monsters, i)
@@ -502,15 +590,109 @@ end
 function UpdateProjectiles(dt)
     for i = #game.projectiles, 1, -1 do
         local p = game.projectiles[i]
-        p.t = p.t + dt * 5
-        if p.t >= 1 then
+        local tx, ty = GetProjectileTargetPosition(p)
+        if tx == nil then
             table.remove(game.projectiles, i)
+        else
+            local dx, dy = tx - p.x, ty - p.y
+            local distance = math.sqrt(dx * dx + dy * dy)
+            local step = p.speed * dt
+            p.prevX, p.prevY = p.x, p.y
+            if distance <= math.max(4, step) then
+                p.x, p.y = tx, ty
+                ResolveProjectile(p)
+                table.remove(game.projectiles, i)
+            elseif distance > 0 then
+                p.x = p.x + dx / distance * step
+                p.y = p.y + dy / distance * step
+            end
         end
     end
 end
 
-function CreateProjectile(x1, y1, x2, y2, color)
-    table.insert(game.projectiles, { x1 = x1, y1 = y1, x2 = x2, y2 = y2, t = 0, color = color })
+function CreateProjectile(kind, x, y, target, payload)
+    local speed = kind == "arrow" and 1050 or (kind == "frost" and 720 or 560)
+    table.insert(game.projectiles, {
+        kind = kind,
+        x = x,
+        y = y,
+        prevX = x,
+        prevY = y,
+        target = target,
+        payload = payload or {},
+        speed = speed,
+    })
+end
+
+function GetProjectileTargetPosition(p)
+    if p.kind == "blessing" then
+        if not IsDefenderActive(p.target) then return nil, nil end
+        local slot = slotDefs[p.target.slot]
+        return slot.x, slot.y - 22
+    end
+    if not IsMonsterAlive(p.target) then return nil, nil end
+    return p.target.x, p.target.y
+end
+
+function IsMonsterAlive(target)
+    if target == nil or target.dead then return false end
+    for _, m in ipairs(game.monsters) do
+        if m == target then return true end
+    end
+    return false
+end
+
+function IsDefenderActive(target)
+    if target == nil then return false end
+    for _, d in pairs(game.defenders) do
+        if d == target then return true end
+    end
+    return false
+end
+
+function ResolveProjectile(p)
+    local payload = p.payload
+    if p.kind == "blessing" then
+        local target = p.target
+        if IsDefenderActive(target) then
+            target.buffTime = payload.duration
+            target.buffAttack = payload.attack
+            target.buffSpeed = payload.speed
+            local slot = slotDefs[target.slot]
+            AddFloat(slot.x, slot.y - 52, "祝福", { 255, 230, 120 })
+            SpawnParticle(slot.x, slot.y - 15, 58, { 155, 255, 105 })
+        end
+        return
+    end
+
+    local target = p.target
+    if not IsMonsterAlive(target) then return end
+    local x, y = target.x, target.y
+    if p.kind == "arrow" then
+        DamageMonster(target, payload.damage, "physical")
+        if payload.explosion then
+            AreaDamage(x, y, 75, payload.damage * 0.45)
+        end
+        if payload.pierce then
+            AreaDamage(x, y - 90, 55, payload.damage * 0.35)
+        end
+        SpawnParticle(x, y, payload.explosion and 75 or 24, payload.explosion and { 255, 160, 70 } or { 170, 255, 120 })
+    elseif p.kind == "frost" then
+        DamageMonster(target, payload.damage, "magic")
+        if IsMonsterAlive(target) then
+            target.slowTime = payload.slowTime
+            target.slowRatio = payload.slowRatio
+            if payload.freeze then
+                target.freezeTime = target.id == "boss" and 0.35 or 0.9
+                AddFloat(x, y - 30, "冻结", { 150, 230, 255 })
+            end
+        end
+        if payload.level == 3 then
+            AreaSlow(x, y, 75 + game.bonuses.mageArea, payload.damage * 0.40)
+        else
+            SpawnParticle(x, y, 36, { 90, 220, 255 })
+        end
+    end
 end
 
 function SpawnParticle(x, y, r, color)
@@ -714,6 +896,12 @@ function CreateDefender(kind, level, slot)
         level = level,
         slot = slot,
         cooldown = 0.2,
+        action = nil,
+        actionTime = 0,
+        actionDuration = 0,
+        actionInterval = 0,
+        actionReleased = false,
+        actionTarget = nil,
         buffTime = 0,
         buffAttack = 0,
         buffSpeed = 0,
@@ -808,10 +996,10 @@ end
 function DrawScene(ctx, width, height)
     DrawBackground(ctx, width, height)
     DrawWorldHud(ctx)
-    DrawProjectiles(ctx)
-    DrawParticles(ctx)
     DrawMonsters(ctx)
     DrawDefenders(ctx)
+    DrawProjectiles(ctx)
+    DrawParticles(ctx)
     DrawBottomHud(ctx)
     DrawFloats(ctx)
     DrawEventModal(ctx)
@@ -889,6 +1077,11 @@ function DrawDefender(ctx, d, x, y)
     local sx, sy = ToScreen(x, y)
     local size = (72 + d.level * 8) * layout.scale
     local img = images[d.kind .. d.level]
+    if d.action ~= nil and d.actionDuration > 0 then
+        local progress = math.min(0.999, d.actionTime / d.actionDuration)
+        local frame = math.min(DEFENDER_ATTACK_FRAMES, math.floor(progress * DEFENDER_ATTACK_FRAMES) + 1)
+        img = images[d.kind .. "_attack_" .. d.level .. "_" .. frame] or img
+    end
 
     nvgBeginPath(ctx)
     nvgCircle(ctx, sx, sy, 38 * layout.scale)
@@ -916,6 +1109,17 @@ function DrawMonsters(ctx)
         local sx, sy = ToScreen(m.x, m.y)
         local size = m.radius * 2.3 * layout.scale
         local img = images["monster_" .. m.id]
+        if m.id ~= "boss" then
+            local frame = 1
+            if m.animState == "attack" then
+                local duration = monsterTypes[m.id].attackDuration
+                local progress = math.min(0.999, m.animTime / duration)
+                frame = math.min(MONSTER_ANIMATION_FRAMES, math.floor(progress * MONSTER_ANIMATION_FRAMES) + 1)
+            else
+                frame = math.floor(m.animTime / monsterTypes[m.id].walkFrameTime) % MONSTER_ANIMATION_FRAMES + 1
+            end
+            img = images["monster_" .. m.id .. "_" .. m.animState .. "_" .. frame] or img
+        end
         if img ~= nil then
             nvgBeginPath(ctx)
             nvgRect(ctx, sx - size * 0.5, sy - size * 0.75, size, size)
@@ -927,6 +1131,16 @@ function DrawMonsters(ctx)
             nvgCircle(ctx, sx, sy, m.radius * layout.scale)
             nvgFillColor(ctx, nvgRGBA(c[1], c[2], c[3], 235))
             nvgFill(ctx)
+        end
+
+        if m.freezeTime > 0 then
+            nvgBeginPath(ctx)
+            nvgCircle(ctx, sx, sy - 5 * layout.scale, (m.radius + 8) * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(100, 220, 255, 65))
+            nvgFill(ctx)
+            nvgStrokeColor(ctx, nvgRGBA(170, 245, 255, 210))
+            nvgStrokeWidth(ctx, 2 * layout.scale)
+            nvgStroke(ctx)
         end
 
         local hpRatio = math.max(0, m.hp / m.maxHp)
@@ -943,16 +1157,49 @@ end
 
 function DrawProjectiles(ctx)
     for _, p in ipairs(game.projectiles) do
-        local x = p.x1 + (p.x2 - p.x1) * p.t
-        local y = p.y1 + (p.y2 - p.y1) * p.t
-        local sx1, sy1 = ToScreen(p.x1, p.y1)
-        local sx2, sy2 = ToScreen(x, y)
-        nvgBeginPath(ctx)
-        nvgMoveTo(ctx, sx1, sy1)
-        nvgLineTo(ctx, sx2, sy2)
-        nvgStrokeColor(ctx, nvgRGBA(p.color[1], p.color[2], p.color[3], 230))
-        nvgStrokeWidth(ctx, 3 * layout.scale)
-        nvgStroke(ctx)
+        local sx, sy = ToScreen(p.x, p.y)
+        local psx, psy = ToScreen(p.prevX, p.prevY)
+        local dx, dy = sx - psx, sy - psy
+        local length = math.max(0.001, math.sqrt(dx * dx + dy * dy))
+        local ux, uy = dx / length, dy / length
+
+        if p.kind == "arrow" then
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx - ux * 24 * layout.scale, sy - uy * 24 * layout.scale)
+            nvgLineTo(ctx, sx, sy)
+            nvgStrokeColor(ctx, nvgRGBA(255, 225, 105, 245))
+            nvgStrokeWidth(ctx, 3 * layout.scale)
+            nvgStroke(ctx)
+            nvgBeginPath(ctx)
+            nvgCircle(ctx, sx, sy, 4.5 * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(255, 245, 175, 255))
+            nvgFill(ctx)
+        elseif p.kind == "frost" then
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx - ux * 30 * layout.scale, sy - uy * 30 * layout.scale)
+            nvgLineTo(ctx, sx, sy)
+            nvgStrokeColor(ctx, nvgRGBA(80, 205, 255, 165))
+            nvgStrokeWidth(ctx, 7 * layout.scale)
+            nvgStroke(ctx)
+            nvgBeginPath(ctx)
+            nvgCircle(ctx, sx, sy, 8 * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(175, 245, 255, 245))
+            nvgFill(ctx)
+            nvgStrokeColor(ctx, nvgRGBA(75, 165, 255, 255))
+            nvgStrokeWidth(ctx, 2 * layout.scale)
+            nvgStroke(ctx)
+        else
+            nvgBeginPath(ctx)
+            nvgMoveTo(ctx, sx - ux * 22 * layout.scale, sy - uy * 22 * layout.scale)
+            nvgLineTo(ctx, sx, sy)
+            nvgStrokeColor(ctx, nvgRGBA(145, 255, 115, 145))
+            nvgStrokeWidth(ctx, 6 * layout.scale)
+            nvgStroke(ctx)
+            nvgBeginPath(ctx)
+            nvgCircle(ctx, sx, sy, 7 * layout.scale)
+            nvgFillColor(ctx, nvgRGBA(225, 255, 145, 245))
+            nvgFill(ctx)
+        end
     end
 end
 
