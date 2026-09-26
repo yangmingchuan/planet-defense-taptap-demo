@@ -7,9 +7,9 @@
   "entry": "main.lua",
   "version": "1.0.0",
   "taptap_publish": {
-    "title": "",
-    "description": "",
-    "category": "",
+    "title": "星球防线",
+    "description": "随机召唤三类守卫，拖动合成升级，选择强化并守住十波异星进攻的单机塔防试玩。",
+    "category": "塔防",
     "screen_orientation": "landscape",
     "collection_type": "sce",
     "trial_note": "",
