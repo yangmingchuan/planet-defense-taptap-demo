@@ -85,4 +85,37 @@ for _, viewport in ipairs(views) do
     print("PASS viewport " .. viewport[1] .. "x" .. viewport[2])
 end
 assert(draws > 0)
+for _, case in ipairs({
+    { top = 59, bottom = 34, menuBottom = 0.07 },
+    { top = 0, bottom = 0, menuBottom = 0.08 },
+    { top = 44, bottom = 21, left = 12, right = 16 },
+}) do
+    GetSafeAreaInsets = function()
+        return { min = { x = case.left or 0, y = case.top }, max = { x = case.right or 0, y = case.bottom } }
+    end
+    sdk = { GetNativeExitMenuRect = function()
+        return case.menuBottom and { bottom = case.menuBottom } or nil
+    end }
+    ResetGame("home")
+    RebuildLayout(402, 874)
+    local layout = upvalue(ToScreen, "layout")
+    local top = math.max(case.top, (case.menuBottom or 0) * 874) + 8
+    local x, y = ToScreen(layout.homeHomeButton.x, 0)
+    near(x, case.left or 0); near(y, top)
+    local r = layout.homeMapButton
+    x, y = ToScreen(r.x + r.w, r.y + r.h)
+    near(x, 402 - (case.right or 0)); near(y, 874 - case.bottom)
+    click(layout.homeGuardButton)
+    click(layout.homeLevelChoices[2])
+    assert(upvalue(HandleMouseDown, "game").homeLevel == 2)
+    DrawHome({})
+    click(layout.homeHomeButton)
+    click(layout.homeStartButton)
+    RebuildLayout(402, 874)
+    layout = upvalue(ToScreen, "layout")
+    near(layout.scale, math.min(402 / 942, 874 / 1670))
+    near(layout.safeTop, 0)
+end
+GetSafeAreaInsets, sdk = nil, nil
+print("PASS notch, native capsule, gesture inset, side insets, input mapping, battle coordinates")
 print("PASS tab routing, hit regions, guard/level selection, map route, home idle, start battle, return home")

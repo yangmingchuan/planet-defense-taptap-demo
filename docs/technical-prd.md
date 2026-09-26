@@ -51,7 +51,9 @@
 
 新版首页：舞台中心 y=bottom×0.59，主按钮 y=bottom-350；图鉴选择区 y=bottom-490。绘制和命中共用矩形，不使用独立魔数计算触摸热区。`DrawHomeArt` 按图片真实宽高等比绘制；首页轻微浮动只改变视觉，不参与战斗模拟。
 
-`ToScreen` 与 `ScreenToDesign` 互为逆变换。所有 Tab 绘制和输入共享 `layout` 矩形。平台原生刘海/系统手势区尚未读取，引擎提供的游戏视口是当前边界。
+`ToScreen` 与 `ScreenToDesign` 互为逆变换。所有 Tab 绘制和输入共享 `layout` 矩形。
+
+首页安全区修正：`GetHomeSafeInsets` 读取 `GetSafeAreaInsets(false)` 的物理像素边距，使用 `sdk:GetNativeExitMenuRect().bottom * height` 合并平台胶囊下沿，再加8像素间隙。仅首页使用可用安全宽高计算 scale/dx/dy；背景、顶栏底色和底栏底色仍延伸至屏幕边缘。顶部内容下移、底部热区避开手势条；每次重建布局重新读取，支持模拟器切换。API 不存在时边距为0。战斗保持原设计坐标，不受首页安全区变换影响。
 
 ## 5. 战斗对象与执行顺序
 

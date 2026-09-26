@@ -1107,22 +1107,45 @@ function ShowToast(text)
     toast.time = 1.4
 end
 
+function GetHomeSafeInsets(height)
+    local insets = { left = 0, top = 0, right = 0, bottom = 0 }
+    if GetSafeAreaInsets then
+        local rect = GetSafeAreaInsets(false)
+        if rect then
+            insets.left, insets.top = rect.min.x, rect.min.y
+            insets.right, insets.bottom = rect.max.x, rect.max.y
+        end
+    end
+    if sdk and sdk.GetNativeExitMenuRect then
+        local menu = sdk:GetNativeExitMenuRect()
+        if menu then insets.top = math.max(insets.top, menu.bottom * height) end
+    end
+    if insets.top > 0 then insets.top = insets.top + 8 end
+    return insets
+end
+
 function RebuildLayout(width, height)
-    local scale = math.min(width / DESIGN_W, height / DESIGN_H)
+    local isHome = game and game.state == "home"
+    local safe = isHome and GetHomeSafeInsets(height) or { left = 0, top = 0, right = 0, bottom = 0 }
+    local availableW = math.max(1, width - safe.left - safe.right)
+    local availableH = math.max(1, height - safe.top - safe.bottom)
+    local scale = math.min(availableW / DESIGN_W, availableH / DESIGN_H)
     local drawW = DESIGN_W * scale
     local drawH = DESIGN_H * scale
-    local dx = (width - drawW) * 0.5
+    local dx = safe.left + (availableW - drawW) * 0.5
     local dy = (height - drawH) * 0.5
-    if game and game.state == "home" then dy = 0 end
-    local homeBottom = height / scale
-    local homeLeft = -dx / scale
-    local homeWidth = width / scale
+    if isHome then dy = safe.top end
+    local homeBottom = availableH / scale
+    local homeLeft = (safe.left - dx) / scale
+    local homeWidth = availableW / scale
     layout = {
         scale = scale,
         dx = dx,
         dy = dy,
         drawW = drawW,
         drawH = drawH,
+        safeTop = safe.top,
+        safeBottom = safe.bottom,
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
         barracksButton = { x = 680, y = 1455, w = 245, h = 185 },
@@ -1264,7 +1287,8 @@ function DrawHome(ctx)
 end
 
 function DrawHomeHeader(ctx)
-    DrawHomeBand(ctx, 0, 132, { 28, 65, 67, 250 })
+    local top = layout.safeTop / layout.scale
+    DrawHomeBand(ctx, -top, 132 + top, { 28, 65, 67, 250 })
     DrawHomeArt(ctx, "commander", 82, 62, 100)
     DrawText(ctx, "星球防线", 150, 53, 32, { 250, 253, 249 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     DrawText(ctx, "边境前哨", 151, 92, 24, { 190, 221, 208 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -1440,7 +1464,7 @@ function DrawHomeAction(ctx, r, title, subtitle)
 end
 
 function DrawHomeNav(ctx)
-    DrawHomeBand(ctx, layout.homeHomeButton.y, 160, { 241, 246, 239, 255 })
+    DrawHomeBand(ctx, layout.homeHomeButton.y, 160 + layout.safeBottom / layout.scale, { 241, 246, 239, 255 })
     DrawHomeNavItem(ctx, layout.homeHomeButton, "home", "防线", "castle")
     DrawHomeNavItem(ctx, layout.homeGuardButton, "guards", "守卫", "shield")
     DrawHomeNavItem(ctx, layout.homeMechaButton, "mecha", "机甲", "bot")
