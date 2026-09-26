@@ -198,7 +198,13 @@ end
 
 function LoadImages()
     LoadImage("background", "assets/image/scene/battle-background-v6.png")
-    LoadImage("home_background", "assets/image/home/home-background-v1.png")
+    LoadImage("home_background", "assets/image/home/home-background-v2.png")
+    LoadImage("commander", "assets/image/home/commander-v1.png")
+    for _, icon in ipairs({ "castle", "shield", "bot", "orbit", "swords", "snowflake", "heart", "lock-keyhole" }) do
+        for _, tone in ipairs({ "light", "dark", "gold" }) do
+            LoadImage("icon_" .. icon .. "_" .. tone, "assets/image/home/icons/" .. icon .. "-" .. tone .. ".png")
+        end
+    end
 
     local map = {
         archer = "archer",
@@ -232,6 +238,8 @@ function ResetGame(initialState)
     game = {
         state = initialState or "home",
         homeTab = "home",
+        homeGuard = 1,
+        homeLevel = 3,
         silver = 80,
         summonCost = 20,
         eventCost = 60,
@@ -885,6 +893,15 @@ function HandleMouseDown(eventType, eventData)
             game.homeTab = "map"
         elseif HitRect(x, y, layout.homeStartButton) and game.homeTab == "home" then
             StartBattle()
+        elseif game.homeTab == "guards" then
+            for i, r in ipairs(layout.homeGuardChoices) do
+                if HitRect(x, y, r) then game.homeGuard = i end
+            end
+            for i, r in ipairs(layout.homeLevelChoices) do
+                if HitRect(x, y, r) then game.homeLevel = i end
+            end
+        elseif game.homeTab == "map" and HitRect(x, y, layout.homeMapVisit) then
+            game.homeTab = "home"
         end
         return
     end
@@ -1109,7 +1126,19 @@ function RebuildLayout(width, height)
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
         barracksButton = { x = 680, y = 1455, w = 245, h = 185 },
-        homeStartButton = { x = 181, y = 1302, w = 580, h = 112 },
+        homeStartButton = { x = 181, y = homeBottom - 350, w = 580, h = 116 },
+        homeStageY = homeBottom * 0.59,
+        homeGuardChoices = {
+            { x = 198, y = homeBottom - 490, w = 160, h = 120 },
+            { x = 391, y = homeBottom - 490, w = 160, h = 120 },
+            { x = 584, y = homeBottom - 490, w = 160, h = 120 },
+        },
+        homeLevelChoices = {
+            { x = 273, y = 416, w = 132, h = 66 },
+            { x = 405, y = 416, w = 132, h = 66 },
+            { x = 537, y = 416, w = 132, h = 66 },
+        },
+        homeMapVisit = { x = 181, y = homeBottom - 350, w = 580, h = 116 },
         homeHomeButton = { x = homeLeft, y = homeBottom - 160, w = homeWidth / 4, h = 160 },
         homeGuardButton = { x = homeLeft + homeWidth / 4, y = homeBottom - 160, w = homeWidth / 4, h = 160 },
         homeMechaButton = { x = homeLeft + homeWidth / 2, y = homeBottom - 160, w = homeWidth / 4, h = 160 },
@@ -1217,6 +1246,8 @@ function DrawBackground(ctx, width, height)
 end
 
 function DrawHome(ctx)
+    local footerHeight = game.homeTab == "guards" and 540 or (game.homeTab == "mecha" and 460 or 370)
+    DrawHomeBand(ctx, layout.homeHomeButton.y - footerHeight, footerHeight, { 28, 65, 67, 230 })
     DrawHomeHeader(ctx)
     if game.homeTab == "home" then
         DrawHomeMission(ctx)
@@ -1233,214 +1264,200 @@ function DrawHome(ctx)
 end
 
 function DrawHomeHeader(ctx)
-    local sx, sy = ToScreen(0, 0)
-    nvgBeginPath(ctx)
-    nvgRect(ctx, 0, 0, layout.viewportWidth, 132 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(8, 18, 37, 232))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(105, 220, 255, 155))
-    nvgStrokeWidth(ctx, 1.5 * layout.scale)
-    nvgBeginPath(ctx)
-    nvgMoveTo(ctx, sx, sy + 131 * layout.scale)
-    nvgLineTo(ctx, sx + DESIGN_W * layout.scale, sy + 131 * layout.scale)
-    nvgStroke(ctx)
-    nvgBeginPath(ctx)
-    nvgCircle(ctx, sx + 58 * layout.scale, sy + 66 * layout.scale, 25 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(90, 220, 255, 225))
-    nvgFill(ctx)
-    DrawText(ctx, "01", 58, 66, 20, { 12, 34, 58 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "星际指挥官", 96, 54, 18, { 255, 255, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "边境前哨", 96, 80, 14, { 155, 220, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "星球防线", 471, 62, 26, { 235, 250, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "PLANET DEFENSE", 471, 90, 12, { 125, 215, 250 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-
-    DrawText(ctx, "边境裂隙", 890, 55, 20, { 255, 222, 140 }, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "1-1", 890, 84, 16, { 155, 220, 255 }, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    DrawHomeBand(ctx, 0, 132, { 28, 65, 67, 250 })
+    DrawHomeArt(ctx, "commander", 82, 62, 100)
+    DrawText(ctx, "星球防线", 150, 53, 32, { 250, 253, 249 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "边境前哨", 151, 92, 24, { 190, 221, 208 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    DrawHomeIcon(ctx, "orbit", "gold", 748, 63, 40)
+    DrawText(ctx, "第一扇区", 890, 48, 25, { 250, 232, 183 }, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "1-1", 890, 84, 24, { 250, 253, 249 }, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
 end
 
-function DrawHomeResource(ctx, x, y, label, value, color)
-    local sx, sy = ToScreen(x, y)
+function DrawHomeBand(ctx, y, h, color)
+    local _, sy = ToScreen(0, y)
     nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, 170 * layout.scale, 54 * layout.scale, 14 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(12, 25, 48, 205))
+    nvgRect(ctx, 0, sy, layout.viewportWidth, h * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(color[1], color[2], color[3], color[4] or 255))
     nvgFill(ctx)
+end
+
+function DrawHomeArt(ctx, id, x, y, size)
+    local img, meta = images[id], imageMeta[id]
+    if not img or not meta then return end
+    local w, h = size, size
+    if meta.w > meta.h then h = size * meta.h / meta.w else w = size * meta.w / meta.h end
+    local sx, sy = ToScreen(x - w / 2, y - h / 2)
     nvgBeginPath(ctx)
-    nvgCircle(ctx, sx + 27 * layout.scale, sy + 27 * layout.scale, 14 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(color[1], color[2], color[3], 230))
+    nvgRect(ctx, sx, sy, w * layout.scale, h * layout.scale)
+    nvgFillPaint(ctx, nvgImagePattern(ctx, sx, sy, w * layout.scale, h * layout.scale, 0, img, 1))
     nvgFill(ctx)
-    DrawText(ctx, value, x + 54, y + 27, 20, { 255, 255, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, label, x + 143, y + 27, 13, { 160, 205, 230 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeIcon(ctx, id, tone, x, y, size)
+    DrawHomeArt(ctx, "icon_" .. id .. "_" .. tone, x, y, size)
+end
+
+function DrawHomeHeading(ctx, kicker, title)
+    DrawText(ctx, kicker, 471, 226, 28, { 34, 74, 76 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, title, 471, 300, 52, { 24, 58, 62 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeMission(ctx)
-    DrawText(ctx, "星球防线", 471, 446, 52, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "边境裂隙 · 第一扇区", 471, 497, 20, { 160, 230, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-
-    local sx, sy = ToScreen(206, 548)
-    nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, 530 * layout.scale, 126 * layout.scale, 20 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(12, 28, 54, 185))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(122, 220, 255, 125))
-    nvgStrokeWidth(ctx, 1.5 * layout.scale)
-    nvgStroke(ctx)
-    DrawText(ctx, "裂隙先锋", 471, 586, 28, { 255, 238, 165 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "第 1 关  ·  10 波异星潮  ·  星核破坏者", 471, 628, 20, { 205, 232, 250 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawHomeHeading(ctx, "第一章  /  边境裂隙", "裂隙先锋")
+    DrawText(ctx, "守住前哨，迎击十波异星潮", 471, 364, 28, { 35, 77, 77 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeSquad(ctx)
-    DrawText(ctx, "本次防线", 471, 774, 22, { 235, 248, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "弓箭手 · 冰霜法师 · 祝福者", 471, 805, 16, { 150, 225, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawHomeSquadCard(ctx, 230, 900, "archer3", "弓箭手", { 120, 230, 95 })
-    DrawHomeSquadCard(ctx, 471, 900, "mage3", "冰霜法师", { 105, 210, 255 })
-    DrawHomeSquadCard(ctx, 712, 900, "healer3", "祝福者", { 255, 210, 108 })
+    local y = layout.homeStageY
+    local bob = math.sin(game.time * 1.8) * 4
+    DrawHomeArt(ctx, "archer3", 252, y - 58 + bob, 280)
+    DrawHomeArt(ctx, "healer3", 702, y - 55 - bob, 272)
+    DrawHomeArt(ctx, "mage3", 476, y - 42 + bob, 330)
+    local infoY = layout.homeStartButton.y - 76
+    DrawText(ctx, "弓箭手  ·  冰霜法师  ·  祝福者", 471, infoY - 42, 28, { 248, 250, 245 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "10 波进攻    /    1 位首领", 471, infoY, 26, { 186, 216, 201 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeGuardsPage(ctx)
-    DrawText(ctx, "守卫图鉴", 471, 294, 42, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "弓箭手 / 冰霜法师 / 祝福者", 471, 338, 20, { 155, 225, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawHomeSquadCard(ctx, 230, 565, "archer3", "弓箭手", { 120, 230, 95 })
-    DrawHomeSquadCard(ctx, 471, 540, "mage3", "冰霜法师", { 105, 210, 255 })
-    DrawHomeSquadCard(ctx, 712, 565, "healer3", "祝福者", { 255, 210, 108 })
-    DrawHomeInfoPanel(ctx, 136, 770, 670, 280, "三级终极", "弓箭手：星辉重箭，落点爆炸\n冰霜法师：绝对零域，范围冰冻\n祝福者：生命超载，修墙与全队祝福")
+    local guards = {
+        { id = "archer", name = "弓箭手", role = "远程输出", icon = "swords", skill = "星辉重箭", desc = "宽幅重箭命中后爆炸", basic = "箭矢精准打击，三级追加范围伤害" },
+        { id = "mage", name = "冰霜法师", role = "范围控制", icon = "snowflake", skill = "绝对零域", desc = "冰晶扩散，冻结范围内敌人", basic = "冰弹减速敌人，三级追加溅射伤害" },
+        { id = "healer", name = "祝福者", role = "团队辅助", icon = "heart", skill = "生命超载", desc = "修复城墙，强化全队攻击与攻速", basic = "祝福队友，没有祝福目标时修复城墙" },
+    }
+    local selected = guards[game.homeGuard]
+    DrawHomeHeading(ctx, "守卫图鉴", selected.name)
+    DrawText(ctx, selected.role, 471, 362, 25, { 35, 77, 77 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    for i, r in ipairs(layout.homeLevelChoices) do
+        DrawHomeChoice(ctx, r, game.homeLevel == i)
+        DrawText(ctx, ({ "I", "II", "III" })[i], r.x + r.w / 2, r.y + r.h / 2, 27,
+            game.homeLevel == i and { 255, 255, 250 } or { 28, 63, 65 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+    local y = layout.homeStageY - 240 + math.sin(game.time * 1.8) * 4
+    if game.homeLevel == 2 then
+        DrawHomeArt(ctx, selected.id .. "1", 380, y + 16, 290)
+        DrawHomeArt(ctx, selected.id .. "1", 565, y - 8, 290)
+    else
+        DrawHomeArt(ctx, selected.id .. game.homeLevel, 471, y, 430)
+    end
+    local infoY = layout.homeGuardChoices[1].y - 122
+    DrawHomeIcon(ctx, selected.icon, "gold", 471, infoY - 53, 38)
+    DrawText(ctx, game.homeLevel == 3 and selected.skill or selected.role, 471, infoY, 33, { 255, 227, 176 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, game.homeLevel == 3 and selected.desc or selected.basic, 471, infoY + 48, 27, { 240, 246, 236 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    for i, r in ipairs(layout.homeGuardChoices) do
+        DrawHomeChoice(ctx, r, game.homeGuard == i)
+        DrawHomeArt(ctx, guards[i].id .. "3", r.x + r.w / 2, r.y + 42, 76)
+        DrawText(ctx, guards[i].name, r.x + r.w / 2, r.y + 99, 26,
+            game.homeGuard == i and { 255, 255, 250 } or { 28, 63, 65 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+    DrawText(ctx, "三级守卫击杀充能，满怒后释放终极", 471, layout.homeStartButton.y + 45, 27, { 211, 231, 217 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeChoice(ctx, r, selected)
+    local x, y = ToScreen(r.x, r.y)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, x, y, r.w * layout.scale, r.h * layout.scale, 8 * layout.scale)
+    nvgFillColor(ctx, selected and nvgRGBA(35, 82, 77, 250) or nvgRGBA(243, 248, 244, 230))
+    nvgFill(ctx)
 end
 
 function DrawHomeMechaPage(ctx)
-    DrawText(ctx, "领主机甲", 471, 294, 42, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "开局防线的长期加成核心", 471, 338, 18, { 155, 225, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local sx, sy = ToScreen(331, 438)
-    nvgBeginPath(ctx)
-    nvgCircle(ctx, sx, sy, 118 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(65, 190, 235, 80))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(125, 235, 255, 210))
-    nvgStrokeWidth(ctx, 3 * layout.scale)
-    nvgStroke(ctx)
-    DrawText(ctx, "MK", 331, 426, 46, { 205, 250, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "I", 331, 478, 30, { 255, 220, 105 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawHomeStat(ctx, 570, 426, "城墙装甲", "+0")
-    DrawHomeStat(ctx, 570, 518, "开局攻击", "+0")
-    DrawHomeStat(ctx, 570, 610, "职业增幅", "+0%")
-    DrawHomeInfoPanel(ctx, 136, 780, 670, 190, "尚未解锁", "机甲等级：未激活\n碎片收集与永久强化：尚未开放")
+    DrawHomeHeading(ctx, "领主机甲", "前哨守望者")
+    DrawText(ctx, "原型机  /  待激活", 471, 364, 25, { 35, 77, 77 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawHomeArt(ctx, "commander", 471, layout.homeStageY - 140, 490)
+    local y = layout.homeStartButton.y - 140
+    for i, entry in ipairs({ { "shield", "城墙装甲" }, { "swords", "开局攻击" }, { "heart", "职业增幅" } }) do
+        local x = 241 + (i - 1) * 230
+        DrawHomeIcon(ctx, entry[1], "light", x, y - 70, 48)
+        DrawText(ctx, entry[2], x, y - 15, 28, { 250, 252, 248 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    end
+    DrawHomeIcon(ctx, "lock-keyhole", "gold", 471, layout.homeStartButton.y + 3, 36)
+    DrawText(ctx, "成长系统尚未开放", 471, layout.homeStartButton.y + 56, 28, { 255, 226, 166 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeMapPage(ctx)
-    DrawText(ctx, "星图航线", 471, 294, 42, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "向裂隙推进，解锁更多怪兽与机甲模块", 471, 338, 18, { 155, 225, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawHomeMapNode(ctx, 292, 555, "1-1", "裂隙先锋", true)
-    DrawHomeMapNode(ctx, 471, 680, "1-2", "失落浮岛", false)
-    DrawHomeMapNode(ctx, 650, 555, "1-3", "星门守卫", false)
-    DrawHomeInfoPanel(ctx, 136, 850, 670, 190, "当前航线", "1-1 裂隙先锋：已开放，10 波防守\n1-2 / 1-3：尚未开放")
+    DrawHomeHeading(ctx, "星图航线", "第一扇区")
+    DrawText(ctx, "边境裂隙", 471, 364, 25, { 35, 77, 77 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local y = layout.homeStageY
+    local nodes = { { 340, y + 45, "1-1", "裂隙先锋" }, { 615, y - 210, "1-2", "失落浮岛" }, { 380, y - 455, "1-3", "星门守卫" } }
+    nvgBeginPath(ctx)
+    local sx, sy = ToScreen(nodes[1][1], nodes[1][2])
+    nvgMoveTo(ctx, sx, sy)
+    for i = 2, 3 do
+        sx, sy = ToScreen(nodes[i][1], nodes[i][2])
+        nvgLineTo(ctx, sx, sy)
+    end
+    nvgStrokeWidth(ctx, 6 * layout.scale)
+    nvgStrokeColor(ctx, nvgRGBA(52, 100, 95, 190))
+    nvgStroke(ctx)
+    for i, p in ipairs(nodes) do
+        DrawHomeRouteNode(ctx, p[1], p[2], p[3], p[4], i == 1)
+    end
+    DrawHomeAction(ctx, layout.homeMapVisit, "前往防线", "1-1  裂隙先锋")
 end
 
-function DrawHomeInfoPanel(ctx, x, y, w, h, title, desc)
+function DrawHomeRouteNode(ctx, x, y, code, name, active)
     local sx, sy = ToScreen(x, y)
     nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, w * layout.scale, h * layout.scale, 18 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(9, 25, 48, 215))
+    nvgCircle(ctx, sx, sy, 61 * layout.scale)
+    nvgFillColor(ctx, active and nvgRGBA(226, 104, 78, 255) or nvgRGBA(234, 242, 234, 255))
     nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(110, 215, 250, 125))
-    nvgStrokeWidth(ctx, 1.5 * layout.scale)
+    nvgStrokeWidth(ctx, 5 * layout.scale)
+    nvgStrokeColor(ctx, nvgRGBA(38, 76, 72, 255))
     nvgStroke(ctx)
-    DrawText(ctx, title, x + 30, y + 40, 22, { 255, 232, 155 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    local lineY = y + 88
-    for line in string.gmatch(desc, "[^\n]+") do
-        DrawText(ctx, line, x + 30, lineY, 21, { 210, 235, 250 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        lineY = lineY + 38
+    DrawHomeIcon(ctx, active and "castle" or "lock-keyhole", active and "light" or "dark", x, y, 54)
+    DrawHomeMapLabel(ctx, code .. "  " .. name, x, y + 91, 28)
+    DrawHomeMapLabel(ctx, active and "10 波进攻" or "尚未开放", x, y + 130, 24)
+end
+
+function DrawHomeMapLabel(ctx, text, x, y, size)
+    -- A light outline keeps map labels legible across terrain colors.
+    for _, offset in ipairs({ { -2, 0 }, { 2, 0 }, { 0, -2 }, { 0, 2 } }) do
+        DrawText(ctx, text, x + offset[1], y + offset[2], size, { 245, 250, 238 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
-end
-
-function DrawHomeStat(ctx, x, y, label, value)
-    local sx, sy = ToScreen(x - 20, y - 32)
-    nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, 260 * layout.scale, 68 * layout.scale, 14 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(10, 28, 52, 210))
-    nvgFill(ctx)
-    DrawText(ctx, label, x, y - 4, 18, { 205, 235, 250 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, value, x + 205, y - 4, 22, { 120, 245, 190 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-end
-
-function DrawHomeMapNode(ctx, x, y, code, name, active)
-    local sx, sy = ToScreen(x, y)
-    nvgBeginPath(ctx)
-    nvgCircle(ctx, sx, sy, 62 * layout.scale)
-    nvgFillColor(ctx, active and nvgRGBA(245, 176, 70, 235) or nvgRGBA(14, 35, 65, 220))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, active and nvgRGBA(255, 235, 155, 255) or nvgRGBA(115, 205, 245, 145))
-    nvgStrokeWidth(ctx, 3 * layout.scale)
-    nvgStroke(ctx)
-    DrawText(ctx, code, x, y - 8, 25, active and { 60, 42, 28 } or { 210, 240, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, name, x, y + 88, 17, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-end
-
-function DrawHomeSquadCard(ctx, x, y, imageId, name, color)
-    local sx, sy = ToScreen(x - 88, y - 68)
-    local cx, cy = ToScreen(x, y - 2)
-    nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, 176 * layout.scale, 170 * layout.scale, 18 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(10, 26, 49, 205))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(color[1], color[2], color[3], 170))
-    nvgStrokeWidth(ctx, 2 * layout.scale)
-    nvgStroke(ctx)
-    nvgBeginPath(ctx)
-    nvgCircle(ctx, cx, cy, 47 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(color[1], color[2], color[3], 60))
-    nvgFill(ctx)
-    if images[imageId] ~= nil then
-        local imageX, imageY = ToScreen(x, y + 3)
-        DrawDefenderSprite(ctx, images[imageId], imageX, imageY, 104 * layout.scale)
-    end
-    DrawText(ctx, name, x, y + 76, 17, { 255, 255, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "精英", x, y + 98, 14, { color[1], color[2], color[3] }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, text, x, y, size, { 24, 58, 62 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeStartButton(ctx)
-    local r = layout.homeStartButton
+    DrawHomeAction(ctx, layout.homeStartButton, "开始防守", "1-1  裂隙先锋")
+end
+
+function DrawHomeAction(ctx, r, title, subtitle)
     local sx, sy = ToScreen(r.x, r.y)
     nvgBeginPath(ctx)
-    nvgRoundedRect(ctx, sx, sy, r.w * layout.scale, r.h * layout.scale, 26 * layout.scale)
-    nvgFillColor(ctx, nvgRGBA(237, 162, 54, 245))
+    nvgRoundedRect(ctx, sx, sy + 9 * layout.scale, r.w * layout.scale, r.h * layout.scale, 16 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(113, 52, 43, 255))
     nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(255, 239, 160, 245))
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, r.w * layout.scale, r.h * layout.scale, 16 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(235, 117, 82, 255))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(255, 191, 140, 255))
     nvgStrokeWidth(ctx, 3 * layout.scale)
     nvgStroke(ctx)
-    DrawText(ctx, "开始防守", r.x + r.w * 0.5, r.y + 45, 34, { 46, 37, 32 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, "裂隙先锋 · 10 波", r.x + r.w * 0.5, r.y + 79, 20, { 92, 62, 30 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawHomeIcon(ctx, "swords", "light", r.x + 83, r.y + 55, 48)
+    DrawText(ctx, title, r.x + r.w * 0.5 + 20, r.y + 43, 36, { 255, 254, 243 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, subtitle, r.x + r.w * 0.5 + 20, r.y + 85, 26, { 255, 244, 227 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeNav(ctx)
-    local sx, sy = ToScreen(layout.homeHomeButton.x, layout.homeHomeButton.y)
-    nvgBeginPath(ctx)
-    nvgRect(ctx, 0, sy, layout.viewportWidth, layout.viewportHeight - sy)
-    nvgFillColor(ctx, nvgRGBA(6, 16, 33, 242))
-    nvgFill(ctx)
-    nvgStrokeColor(ctx, nvgRGBA(95, 205, 245, 130))
-    nvgStrokeWidth(ctx, 1.5 * layout.scale)
-    nvgBeginPath(ctx)
-    nvgMoveTo(ctx, sx, sy)
-    nvgLineTo(ctx, layout.viewportWidth, sy)
-    nvgStroke(ctx)
-    DrawHomeNavItem(ctx, layout.homeHomeButton, "home", "主页", "防线")
-    DrawHomeNavItem(ctx, layout.homeGuardButton, "guards", "守卫", "图鉴")
-    DrawHomeNavItem(ctx, layout.homeMechaButton, "mecha", "机甲", "强化")
-    DrawHomeNavItem(ctx, layout.homeMapButton, "map", "星图", "航线")
+    DrawHomeBand(ctx, layout.homeHomeButton.y, 160, { 241, 246, 239, 255 })
+    DrawHomeNavItem(ctx, layout.homeHomeButton, "home", "防线", "castle")
+    DrawHomeNavItem(ctx, layout.homeGuardButton, "guards", "守卫", "shield")
+    DrawHomeNavItem(ctx, layout.homeMechaButton, "mecha", "机甲", "bot")
+    DrawHomeNavItem(ctx, layout.homeMapButton, "map", "星图", "orbit")
 end
 
-function DrawHomeNavItem(ctx, r, id, label, sublabel)
-    local sx, sy = ToScreen(r.x, r.y)
+function DrawHomeNavItem(ctx, r, id, label, icon)
     local active = game.homeTab == id
-    nvgBeginPath(ctx)
-    nvgRect(ctx, sx, sy, r.w * layout.scale, 6 * layout.scale)
-    nvgFillColor(ctx, active and nvgRGBA(30, 92, 125, 235) or nvgRGBA(11, 25, 45, 120))
-    nvgFill(ctx)
     if active then
-        nvgStrokeColor(ctx, nvgRGBA(135, 235, 255, 230))
-        nvgStrokeWidth(ctx, 2 * layout.scale)
-        nvgStroke(ctx)
+        local sx, sy = ToScreen(r.x + r.w * 0.5 - 47, r.y)
+        nvgBeginPath(ctx)
+        nvgRect(ctx, sx, sy, 94 * layout.scale, 7 * layout.scale)
+        nvgFillColor(ctx, nvgRGBA(225, 105, 79, 255))
+        nvgFill(ctx)
     end
-    DrawText(ctx, label, r.x + r.w * 0.5, r.y + 64, 23, active and { 255, 238, 165 } or { 220, 242, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, sublabel, r.x + r.w * 0.5, r.y + 95, 15, active and { 190, 245, 255 } or { 135, 190, 220 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawHomeIcon(ctx, icon, "dark", r.x + r.w * 0.5, r.y + 53, active and 55 or 48)
+    DrawText(ctx, label, r.x + r.w * 0.5, r.y + 110, 30, active and { 176, 67, 50 } or { 65, 92, 86 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawWorldHud(ctx)

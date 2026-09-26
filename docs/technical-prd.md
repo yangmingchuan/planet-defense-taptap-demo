@@ -15,23 +15,29 @@
 | 路径 | 职责 |
 |---|---|
 | scripts/main.lua | 数据配置、状态、输入、模拟、渲染全集 |
-| assets/image/home/home-background-v1.png | 原创首页背景 |
+| assets/image/home/home-background-v2.png | 明亮浮空前哨大厅背景；v1 保留作历史资产 |
+| assets/image/home/commander-v1.png | 带透明通道的领主机甲立绘 |
+| assets/image/home/icons/ | Lucide 0.468.0 栅格图标与许可证，启动时加载 |
 | assets/image/scene/battle-background-v6.png | 战斗地图背景 |
 | assets/image/defenders/ | 三职业等级立绘、攻击帧与生成提示词 |
 | assets/image/monsters/ | 普通/敏捷/肉盾/甲壳的头像和 walk/attack 序列 |
 | docs/mvp-product-prd.md | 当前产品验收基线 |
 | docs/zombie-garden-prd.md | 历史方案，非全部已实现 |
 | tests/home-navigation.lua | 使用 Lua 解释器执行导航与视口回归检查 |
+| tests/render-home.lua / tests/render-home-proof.cjs | 真实首页绘制调用转 SVG/PNG，仅布局校样，不是引擎截图 |
+| tests/prepare-home-icons.cjs | 固定版本图标下载/栅格化，依赖 Node 与 sharp，仅开发时运行 |
 
 ## 3. 状态与导航契约
 
 `game.state`: home → playing → victory/defeat → home 或 playing。
 `game.homeTab`: home / guards / mecha / map，只在首页参与路由。
+`game.homeGuard`: 1/2/3；`game.homeLevel`: 1/2/3，默认为 1 和 3；只影响图鉴展示，ResetGame 重置，无存档。
 
 - `Start` 加载资源后 `ResetGame("home")`。
 - `ResetGame` 初始化本局数据并清空拖拽引用；不承担持久账号存档。
 - `StartBattle` 调用 `ResetGame("playing")`。
 - `HandleMouseDown` 先处理事件模态框，再处理首页 Tab、结算、战斗控件；首页只有 home Tab 的开始按钮有效。
+- 图鉴热区为 `homeGuardChoices` 与 `homeLevelChoices`；星图 `homeMapVisit` 只返回 home，不直接开战。锁定节点无交互。
 - `DrawScene` 首页早返回，不渲染战斗 HUD。`HandleUpdate` 首页不推进波次和战斗。
 - 结算返回入口：`layout.resultHomeButton`；回主页后旧敌人、弹道与拖拽均清空。
 
@@ -42,6 +48,8 @@
 战斗：等比 contain，dx/dy 居中，保持既有地图和格子坐标。首页：dy=0，顶栏物理宽度覆盖视口，背景 cover 允许裁边；内容仍以设计坐标绘制。
 
 首页底栏：逻辑 bottom=height/scale，left=-dx/scale，width=width/scale；各 Tab 是 width/4，y=bottom-160。保证最左到物理 x=0、最右到 width、最底到 height。
+
+新版首页：舞台中心 y=bottom×0.59，主按钮 y=bottom-350；图鉴选择区 y=bottom-490。绘制和命中共用矩形，不使用独立魔数计算触摸热区。`DrawHomeArt` 按图片真实宽高等比绘制；首页轻微浮动只改变视觉，不参与战斗模拟。
 
 `ToScreen` 与 `ScreenToDesign` 互为逆变换。所有 Tab 绘制和输入共享 `layout` 矩形。平台原生刘海/系统手势区尚未读取，引擎提供的游戏视口是当前边界。
 
@@ -95,6 +103,7 @@ main.lua → 配置(config)、战斗模拟(battle)、首页(home)、特效(effec
 - 本地检查：`git diff --check`；通过实际 Lua 解释执行导航测试，覆盖不同宽高与绘制参数合法性。
 - 回归命令：`npx --yes --package fengari-node-cli fengari tests/home-navigation.lua`。使用引擎绘制/输入桩运行真实 main.lua；覆盖 375×812、390×844、430×932、450×800、1280×800。此测试验证路由与几何，不验证真实引擎像素和触摸事件。
 - Maker LSP：`maker-lua-lsp --mode check --path scripts`。缺少 emmylua_check 时记录限制，不能宣称诊断通过。
+- 布局校样：安装 `sharp` 并让 Node 可解析后运行 `node tests/render-home-proof.cjs`，生成三视口四页面 PNG。通过 Lua 的真实绘制调用检查资源、比例、遮挡；字体与绘制后端不同于 Maker，不替代引擎验收。
 - 远程：先 Maker 状态，使用 `maker_build_current_directory`；成功后检查 runtime.log 与 state.json。构建成功不等于手机运行和画面已经验收。
 - 手工验收：四 Tab、回首页开局、结算返回、长屏触底、普通攻击/合成/终极、第十波一 Boss。
 - Maker origin 与 GitHub github 是独立远端；构建不代表已同步 GitHub。不得把含认证信息的 remote URL 写进文档或日志。

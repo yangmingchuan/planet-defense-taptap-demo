@@ -63,6 +63,18 @@ for _, viewport in ipairs(views) do
         HandleUpdate(nil, {GetFloat = function() return 0.016 end})
         assert(game.wave == 0 and #game.monsters == 0)
     end
+    click(layout.homeGuardButton)
+    for guard = 1, 3 do
+        click(layout.homeGuardChoices[guard]); assert(game.homeGuard == guard)
+        for level = 1, 3 do
+            click(layout.homeLevelChoices[level]); assert(game.homeLevel == level)
+            DrawHome({})
+            assert(game.state == "home" and #game.defenders == 0)
+        end
+    end
+    click(layout.homeMapButton)
+    click(layout.homeMapVisit)
+    assert(game.homeTab == "home" and game.state == "home")
     click(layout.homeStartButton)
     game = upvalue(HandleMouseDown, "game")
     assert(game.state == "playing" and game.wallHp == 60)
@@ -73,4 +85,4 @@ for _, viewport in ipairs(views) do
     print("PASS viewport " .. viewport[1] .. "x" .. viewport[2])
 end
 assert(draws > 0)
-print("PASS tab routing, hit regions, home idle, start battle, return home")
+print("PASS tab routing, hit regions, guard/level selection, map route, home idle, start battle, return home")
