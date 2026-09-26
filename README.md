@@ -4,6 +4,7 @@
 
 ## 当前玩法
 
+- 通铺顶栏、固定底部四 Tab：主页、守卫图鉴、机甲展示、星图；主页可进入战斗，结算可返回主页。
 - 十波怪物进攻，包含普通、敏捷、肉盾、甲壳和 Boss 类型。
 - 弓箭手、冰霜法师、奶妈三种职业，最高可合成至三级。
 - 六帧怪物行走/攻击动画和职业攻击动画。
@@ -33,10 +34,12 @@ Maker 构建入口为 `scripts/main.lua`，构建参数为 `entry=main.lua`、`s
 
 ## 文档
 
-- [产品需求文档](docs/zombie-garden-prd.md)
+- [MVP 产品基线（当前验收依据）](docs/mvp-product-prd.md)
+- [技术 PRD（架构、定位与待办）](docs/technical-prd.md)
+- [历史产品方案（含未实现规划）](docs/zombie-garden-prd.md)
 - [怪物素材预览](docs/monster-library-desktop.png)
 - [防守角色素材预览](docs/defender-library-desktop.png)
 
 ## 当前状态
 
-这是核心战斗玩法原型，数值、美术一致性、移动端性能和关卡节奏仍在持续调整。
+这是首页导航与核心战斗玩法原型。机甲永久成长、多关解锁和长期奖励尚未实现；数值、美术一致性、移动端性能和关卡节奏仍在持续调整。
