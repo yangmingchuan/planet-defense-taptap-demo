@@ -160,7 +160,7 @@ function Start()
 
     fontId = nvgCreateFont(nvgContext, "sans", "Fonts/MiSans-Regular.ttf")
     LoadImages()
-    ResetGame()
+    ResetGame("home")
 
     SubscribeToEvent(nvgContext, "NanoVGRender", "HandleRender")
     SubscribeToEvent("Update", "HandleUpdate")
@@ -198,6 +198,7 @@ end
 
 function LoadImages()
     LoadImage("background", "assets/image/scene/battle-background-v6.png")
+    LoadImage("home_background", "assets/image/home/home-background-v1.png")
 
     local map = {
         archer = "archer",
@@ -226,9 +227,9 @@ function LoadImages()
     LoadImage("monster_boss", "assets/image/monsters/tank/portrait-v1.png")
 end
 
-function ResetGame()
+function ResetGame(initialState)
     game = {
-        state = "playing",
+        state = initialState or "home",
         silver = 80,
         summonCost = 20,
         eventCost = 60,
@@ -266,6 +267,10 @@ function ResetGame()
     for i, def in ipairs(slotDefs) do
         game.defenders[i] = nil
     end
+end
+
+function StartBattle()
+    ResetGame("playing")
 end
 
 function HandleUpdate(eventType, eventData)
@@ -867,8 +872,23 @@ function HandleMouseDown(eventType, eventData)
         return
     end
 
+    if game.state == "home" then
+        if HitRect(x, y, layout.homeStartButton) then
+            StartBattle()
+        elseif HitRect(x, y, layout.homeMechaButton) then
+            ShowToast("领主机甲养成将在下一版开放")
+        elseif HitRect(x, y, layout.homeGuardButton) then
+            ShowToast("守卫编队将在下一版开放")
+        elseif HitRect(x, y, layout.homeMapButton) then
+            ShowToast("当前航线：边境裂隙 1-1")
+        elseif HitRect(x, y, layout.homeStoreButton) then
+            ShowToast("补给仓正在准备中")
+        end
+        return
+    end
+
     if game.state ~= "playing" then
-        ResetGame()
+        StartBattle()
         return
     end
 
@@ -1079,6 +1099,11 @@ function RebuildLayout(width, height)
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
         barracksButton = { x = 680, y = 1455, w = 245, h = 185 },
+        homeStartButton = { x = 181, y = 1302, w = 580, h = 112 },
+        homeMechaButton = { x = 40, y = 1512, w = 185, h = 110 },
+        homeGuardButton = { x = 261, y = 1512, w = 185, h = 110 },
+        homeMapButton = { x = 496, y = 1512, w = 185, h = 110 },
+        homeStoreButton = { x = 717, y = 1512, w = 185, h = 110 },
     }
 end
 
@@ -1135,6 +1160,11 @@ end
 
 function DrawScene(ctx, width, height)
     DrawBackground(ctx, width, height)
+    if game.state == "home" then
+        DrawHome(ctx)
+        DrawToast(ctx)
+        return
+    end
     DrawWorldHud(ctx)
     DrawMonsters(ctx)
     DrawDefenders(ctx)
@@ -1154,13 +1184,136 @@ function DrawBackground(ctx, width, height)
     nvgFillColor(ctx, nvgRGBA(10, 15, 25, 255))
     nvgFill(ctx)
 
-    local img = images.background
+    local img = game.state == "home" and images.home_background or images.background
     if img ~= nil then
         nvgBeginPath(ctx)
         nvgRect(ctx, layout.dx, layout.dy, layout.drawW, layout.drawH)
         nvgFillPaint(ctx, nvgImagePattern(ctx, layout.dx, layout.dy, layout.drawW, layout.drawH, 0, img, 1))
         nvgFill(ctx)
     end
+end
+
+function DrawHome(ctx)
+    DrawHomeHeader(ctx)
+    DrawHomeMission(ctx)
+    DrawHomeSquad(ctx)
+    DrawHomeStartButton(ctx)
+    DrawHomeNav(ctx)
+end
+
+function DrawHomeHeader(ctx)
+    local sx, sy = ToScreen(32, 42)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, 258 * layout.scale, 72 * layout.scale, 16 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(12, 25, 48, 210))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(105, 220, 255, 155))
+    nvgStrokeWidth(ctx, 1.5 * layout.scale)
+    nvgStroke(ctx)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx + 38 * layout.scale, sy + 36 * layout.scale, 24 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(90, 220, 255, 225))
+    nvgFill(ctx)
+    DrawText(ctx, "01", 70, 78, 20, { 12, 34, 58 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "星际指挥官", 104, 67, 18, { 255, 255, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "边境前哨", 104, 91, 14, { 155, 220, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+
+    DrawHomeResource(ctx, 542, 50, "晶核", "188", { 115, 235, 255 })
+    DrawHomeResource(ctx, 734, 50, "星币", "3,680", { 255, 215, 105 })
+end
+
+function DrawHomeResource(ctx, x, y, label, value, color)
+    local sx, sy = ToScreen(x, y)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, 170 * layout.scale, 54 * layout.scale, 14 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(12, 25, 48, 205))
+    nvgFill(ctx)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, sx + 27 * layout.scale, sy + 27 * layout.scale, 14 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(color[1], color[2], color[3], 230))
+    nvgFill(ctx)
+    DrawText(ctx, value, x + 54, y + 27, 20, { 255, 255, 255 }, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, label, x + 143, y + 27, 13, { 160, 205, 230 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeMission(ctx)
+    DrawText(ctx, "星球防线", 471, 446, 52, { 245, 252, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "边境裂隙 · 第一扇区", 471, 497, 20, { 160, 230, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+
+    local sx, sy = ToScreen(206, 548)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, 530 * layout.scale, 126 * layout.scale, 20 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(12, 28, 54, 185))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(122, 220, 255, 125))
+    nvgStrokeWidth(ctx, 1.5 * layout.scale)
+    nvgStroke(ctx)
+    DrawText(ctx, "裂隙先锋", 471, 586, 28, { 255, 238, 165 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "第 1 关  ·  10 波异星潮  ·  首次通关可获得机甲碎片", 471, 628, 16, { 205, 232, 250 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeSquad(ctx)
+    DrawText(ctx, "本次防线", 471, 774, 22, { 235, 248, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "弓箭手 · 冰霜法师 · 祝福者", 471, 805, 16, { 150, 225, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawHomeSquadCard(ctx, 230, 900, "archer3", "弓箭手", { 120, 230, 95 })
+    DrawHomeSquadCard(ctx, 471, 875, "mage3", "冰霜法师", { 105, 210, 255 })
+    DrawHomeSquadCard(ctx, 712, 900, "healer3", "祝福者", { 255, 210, 108 })
+end
+
+function DrawHomeSquadCard(ctx, x, y, imageId, name, color)
+    local sx, sy = ToScreen(x - 88, y - 68)
+    local cx, cy = ToScreen(x, y - 2)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, 176 * layout.scale, 170 * layout.scale, 18 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(10, 26, 49, 205))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(color[1], color[2], color[3], 170))
+    nvgStrokeWidth(ctx, 2 * layout.scale)
+    nvgStroke(ctx)
+    nvgBeginPath(ctx)
+    nvgCircle(ctx, cx, cy, 47 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(color[1], color[2], color[3], 60))
+    nvgFill(ctx)
+    if images[imageId] ~= nil then
+        local imageX, imageY = ToScreen(x, y + 3)
+        DrawDefenderSprite(ctx, images[imageId], imageX, imageY, 104 * layout.scale)
+    end
+    DrawText(ctx, name, x, y + 76, 17, { 255, 255, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "精英", x, y + 98, 14, { color[1], color[2], color[3] }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeStartButton(ctx)
+    local r = layout.homeStartButton
+    local sx, sy = ToScreen(r.x, r.y)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, r.w * layout.scale, r.h * layout.scale, 26 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(237, 162, 54, 245))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(255, 239, 160, 245))
+    nvgStrokeWidth(ctx, 3 * layout.scale)
+    nvgStroke(ctx)
+    DrawText(ctx, "开始防守", r.x + r.w * 0.5, r.y + 45, 34, { 46, 37, 32 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "消耗 10 点能量", r.x + r.w * 0.5, r.y + 79, 16, { 92, 62, 30 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+end
+
+function DrawHomeNav(ctx)
+    DrawHomeNavItem(ctx, layout.homeMechaButton, "机甲", "强化")
+    DrawHomeNavItem(ctx, layout.homeGuardButton, "守卫", "编队")
+    DrawHomeNavItem(ctx, layout.homeMapButton, "星图", "航线")
+    DrawHomeNavItem(ctx, layout.homeStoreButton, "仓库", "补给")
+end
+
+function DrawHomeNavItem(ctx, r, label, sublabel)
+    local sx, sy = ToScreen(r.x, r.y)
+    nvgBeginPath(ctx)
+    nvgRoundedRect(ctx, sx, sy, r.w * layout.scale, r.h * layout.scale, 16 * layout.scale)
+    nvgFillColor(ctx, nvgRGBA(11, 25, 45, 220))
+    nvgFill(ctx)
+    nvgStrokeColor(ctx, nvgRGBA(100, 200, 240, 100))
+    nvgStrokeWidth(ctx, 1.2 * layout.scale)
+    nvgStroke(ctx)
+    DrawText(ctx, label, r.x + r.w * 0.5, r.y + 42, 22, { 235, 248, 255 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, sublabel, r.x + r.w * 0.5, r.y + 73, 15, { 135, 215, 250 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawWorldHud(ctx)
