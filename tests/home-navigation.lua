@@ -1,4 +1,5 @@
 -- Engine-free regression test for the real Lua input and layout code.
+package.path = "scripts/?.lua;" .. package.path
 package.preload["LuaScripts/Utilities/Sample"] = function() return {} end
 package.preload["urhox-libs/UI"] = function() return {} end
 MOUSEB_LEFT = 1
@@ -64,7 +65,7 @@ for _, viewport in ipairs(views) do
         assert(game.wave == 0 and #game.monsters == 0)
     end
     click(layout.homeGuardButton)
-    for guard = 1, 3 do
+    for guard = 1, 9 do
         click(layout.homeGuardChoices[guard]); assert(game.homeGuard == guard)
         for level = 1, 3 do
             click(layout.homeLevelChoices[level]); assert(game.homeLevel == level)

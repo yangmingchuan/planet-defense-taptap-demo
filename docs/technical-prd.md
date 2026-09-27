@@ -2,6 +2,8 @@
 
 版本：2026-09-26。业务依据：`mvp-product-prd.md`。本文记录实际架构、实现约束与技术欠账，防止将设想当成已实现系统。
 
+新增角色的目标架构在 [角色实现契约](characters/implementation-contract.md)，完整契约仍是设计目标。2026-09-27本地已接入 [九角色编队原型](characters/squad-prototype-prd.md)：`scripts/Roster.lua`管理角色配置和编队校验；`main.lua`管理编队快照、额外弹道、酸蚀/聚拢和NanoVG绘制；与目标契约的差异见增量文档。
+
 ## 1. 技术栈与入口
 
 - TapTap Maker 单机 Lua 游戏，入口 `scripts/main.lua`，构建参数 `entry=main.lua`、`scriptsPath=scripts`。

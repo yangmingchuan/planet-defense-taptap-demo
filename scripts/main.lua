@@ -1,6 +1,8 @@
 require "LuaScripts/Utilities/Sample"
 
 local UI = require("urhox-libs/UI")
+local Roster = require("Roster")
+local selectedSquad = { "archer", "mage", "healer" }
 
 local DESIGN_W = 942
 local DESIGN_H = 1670
@@ -42,6 +44,8 @@ local defenderTypes = {
         slow = { 0.20, 0.30, 0.40 },
     },
 }
+
+for id, definition in pairs(Roster.extra) do defenderTypes[id] = definition end
 
 local monsterTypes = {
     basic = { name = "小怪兽", hp = 55, speed = 58, defense = 0, damage = 1, silver = 12, color = { 80, 190, 100 }, walkFrameTime = 0.125, attackDuration = 0.85 },
@@ -200,6 +204,9 @@ function LoadImages()
     LoadImage("background", "assets/image/scene/battle-background-v6.png")
     LoadImage("home_background", "assets/image/home/home-background-v2.png")
     LoadImage("commander", "assets/image/home/commander-v1.png")
+    for id in pairs(Roster.extra) do
+        LoadImage(id .. "_standing", "assets/image/defenders/" .. id .. "/standing-v1.png")
+    end
     for _, icon in ipairs({ "castle", "shield", "bot", "orbit", "swords", "snowflake", "heart", "lock-keyhole" }) do
         for _, tone in ipairs({ "light", "dark", "gold" }) do
             LoadImage("icon_" .. icon .. "_" .. tone, "assets/image/home/icons/" .. icon .. "-" .. tone .. ".png")
@@ -240,6 +247,9 @@ function ResetGame(initialState)
         homeTab = "home",
         homeGuard = 1,
         homeLevel = 3,
+        squad = Roster.Copy(selectedSquad),
+        rolePower = {},
+        acidZones = {},
         silver = 80,
         summonCost = 20,
         eventCost = 60,
@@ -280,7 +290,25 @@ function ResetGame(initialState)
 end
 
 function StartBattle()
+    if not Roster.Valid(selectedSquad) then
+        ShowToast("请选择 1 至 3 种守卫出征")
+        return
+    end
     ResetGame("playing")
+end
+
+function ToggleSquad(kind)
+    if game.state ~= "home" or not Roster.Contains(Roster.order, kind) then return end
+    local index = Roster.Contains(selectedSquad, kind)
+    if index then
+        table.remove(selectedSquad, index)
+    elseif #selectedSquad < 3 then
+        selectedSquad[#selectedSquad + 1] = kind
+    else
+        ShowToast("队伍已满，请先撤下一名守卫")
+        return
+    end
+    game.squad = Roster.Copy(selectedSquad)
 end
 
 function HandleUpdate(eventType, eventData)
@@ -294,6 +322,7 @@ function HandleUpdate(eventType, eventData)
         UpdateMonsters(dt)
         UpdateDefenders(dt)
         UpdateProjectiles(dt)
+        UpdateExtraStatuses(dt)
         UpdateEffects(dt)
         CheckEndState()
     else
@@ -486,6 +515,10 @@ end
 
 function ReleaseDefenderAction(slotIndex, d)
     local start = slotDefs[slotIndex]
+    if Roster.extra[d.kind] then
+        ReleaseExtraAttack(d, false)
+        return
+    end
     if d.kind == "healer" then
         if d.actionTarget ~= nil and IsDefenderActive(d.actionTarget) then
             CreateProjectile("blessing", start.x, start.y - 35, d.actionTarget, {
@@ -537,7 +570,11 @@ function FindTarget(d)
     for _, m in ipairs(game.monsters) do
         local dx = m.x - sx
         local dy = m.y - sy
-        if dx * dx + dy * dy <= range * range and m.y > bestY then
+        local preferred = m.y > bestY
+        if d.kind == "rail_sniper" and best then
+            preferred = m.defense > best.defense or (m.defense == best.defense and m.y > bestY)
+        end
+        if not m.dead and dx * dx + dy * dy <= range * range and preferred then
             best = m
             bestY = m.y
         end
@@ -560,9 +597,10 @@ function FindBestBuffTarget(excludeSlot)
     return best
 end
 
-function DamageMonster(m, amount, damageType, owner)
+function DamageMonster(m, amount, damageType, owner, armorIgnore)
     if m == nil or m.dead then return false end
-    local final = math.max(1, amount - (damageType == "physical" and m.defense or m.defense * 0.5))
+    local defense = math.max(0, m.defense - ((m.corrosionLeft or 0) > 0 and (m.corrosion or 0) or 0))
+    local final = math.max(1, amount - (damageType == "physical" and defense * (1 - (armorIgnore or 0)) or defense * 0.5))
     m.hp = m.hp - final
     if m.hp <= 0 then
         KillMonster(m, owner)
@@ -637,6 +675,7 @@ function GetHighestRageDefender()
 end
 
 function UltimateName(kind)
+    if Roster.extra[kind] then return Roster.extra[kind].skill end
     if kind == "archer" then return "星辉重箭" end
     if kind == "mage" then return "绝对零域" end
     return "生命超载"
@@ -654,12 +693,24 @@ function CastReadyUltimate()
         ShowToast("没有可锁定的怪兽")
         return
     end
+    local acidReservations = #game.acidZones
+    for _, p in ipairs(game.projectiles) do
+        if p.extra and p.kind == "alchemist" and p.ultimate then acidReservations = acidReservations + 1 end
+    end
+    if defender.kind == "alchemist" and acidReservations >= 2 then
+        ShowToast("场上最多同时存在两个酸雾区")
+        return
+    end
 
     defender.rage = 0
     defender.ultimateFlash = 0.8
     if game.ultimateQueue[1] == defender then table.remove(game.ultimateQueue, 1) end
     local start = slotDefs[defender.slot]
-    if defender.kind == "archer" then
+    if Roster.extra[defender.kind] then
+        defender.actionTarget = target
+        ReleaseExtraAttack(defender, true)
+        AddFloat(start.x, start.y - 76, UltimateName(defender.kind), defenderTypes[defender.kind].color)
+    elseif defender.kind == "archer" then
         CreateProjectile("star_arrow", start.x, start.y - 35, target, {
             damage = 150,
             owner = defender,
@@ -723,6 +774,9 @@ end
 function UpdateProjectiles(dt)
     for i = #game.projectiles, 1, -1 do
         local p = game.projectiles[i]
+        if p.extra then
+            if UpdateExtraProjectile(p, dt) then table.remove(game.projectiles, i) end
+        else
         local tx, ty = GetProjectileTargetPosition(p)
         if tx == nil then
             table.remove(game.projectiles, i)
@@ -740,6 +794,195 @@ function UpdateProjectiles(dt)
                 p.y = p.y + dy / distance * step
             end
         end
+        end
+    end
+end
+
+function NearbyEnemies(x, y, radius, cap)
+    local result = {}
+    for _, m in ipairs(game.monsters) do
+        local distance = (m.x - x)^2 + (m.y - y)^2
+        if not m.dead and distance <= radius^2 then result[#result + 1] = { monster = m, distance = distance } end
+    end
+    table.sort(result, function(a, b) return a.distance < b.distance end)
+    local limited = {}
+    for i = 1, math.min(cap, #result) do limited[i] = result[i].monster end
+    return limited
+end
+
+function ReleaseExtraAttack(d, ultimate)
+    local target = d.actionTarget
+    if not IsMonsterAlive(target) then target = FindTarget(d) end
+    if not target then return end
+    local config, start = defenderTypes[d.kind], slotDefs[d.slot]
+    local damage = ultimate and config.ultimate or (config.attack[d.level] + game.bonuses.attackFlat)
+        * (1 + (d.buffAttack or 0)) * (1 + (game.rolePower[d.kind] or 0) * 0.1)
+    local dx, dy = target.x - start.x, target.y - (start.y - 35)
+    local distance = math.max(1, math.sqrt(dx * dx + dy * dy))
+    local duration = d.kind == "rail_sniper" and distance / 1500 or 0.45
+    if d.kind == "stormcaller" then duration = 0.08 end
+    if d.kind == "blade_dancer" then duration = 0.36 end
+    local p = { extra = true, kind = d.kind, x = start.x, y = start.y - 35, prevX = start.x,
+        prevY = start.y - 35, startX = start.x, startY = start.y - 35,
+        endX = target.x, endY = target.y, target = target, elapsed = 0, duration = duration,
+        owner = d, level = d.level, damage = damage, ultimate = ultimate, visited = {}, count = 0 }
+    if d.kind == "rail_sniper" and ultimate then
+        p.endX, p.endY = p.startX + dx / distance * 700, p.startY + dy / distance * 700
+        p.duration = 700 / 1500
+    end
+    game.projectiles[#game.projectiles + 1] = p
+end
+
+function ExtraDamage(p, m, multiplier, ignore)
+    local owner = p.owner
+    -- A projectile fired at level II must not grant level III rage after a merge.
+    if owner and owner.level ~= p.level then owner = nil end
+    DamageMonster(m, p.damage * (multiplier or 1), defenderTypes[p.kind].damageType, owner, ignore)
+end
+
+function PullEnemies(p, x, y, radius, cap, amount)
+    for _, m in ipairs(NearbyEnemies(x, y, radius, cap)) do
+        if m.id ~= "boss" and m.y < 1185 and (m.pullCooldown or 0) <= 0 then
+            local dx, dy = x - m.x, math.max(0, y - m.y)
+            local distance = math.sqrt(dx * dx + dy * dy)
+            if distance > 0 then
+                m.pull = { dx = dx / distance * math.min(amount, distance), dy = dy / distance * math.min(amount, distance), left = 0.25 }
+                m.pullCooldown = 0.8
+            end
+        end
+    end
+end
+
+function ExtraImpact(p)
+    local config = defenderTypes[p.kind]
+    local radius = p.ultimate and 170 or config.radius
+    local cap = p.ultimate and 6 or config.cap
+    if p.kind == "bombardier" then
+        for i, m in ipairs(NearbyEnemies(p.endX, p.endY, radius, cap)) do ExtraDamage(p, m, p.ultimate and 1 or (i == 1 and 1 or 0.55)) end
+    elseif p.kind == "alchemist" then
+        if p.ultimate then
+            if #game.acidZones < 2 then game.acidZones[#game.acidZones + 1] = { x=p.endX, y=p.endY, left=3, tick=1, payload=p } end
+        else
+            for _, m in ipairs(NearbyEnemies(p.endX, p.endY, radius, cap)) do
+                ExtraDamage(p, m)
+                local tickDamage = ({2,5,9})[p.level]
+                if not m.acid or tickDamage > m.acid.damage then
+                    m.acid = { left=3, tick=m.acid and m.acid.tick or 1, damage=tickDamage, owner=p.owner }
+                elseif tickDamage == m.acid.damage then
+                    m.acid.left = 3
+                    if not IsDefenderActive(m.acid.owner) then m.acid.owner = p.owner end
+                end
+                if p.level == 3 then m.corrosion = math.max(m.corrosion or 0, 3); m.corrosionLeft = 3 end
+            end
+        end
+    elseif p.kind == "gravity_engineer" then
+        local targets = p.ultimate and NearbyEnemies(p.endX, p.endY, 180, 6) or {p.target}
+        for _, m in ipairs(targets) do
+            if IsMonsterAlive(m) then
+                ExtraDamage(p, m)
+                m.slowTime = math.max(m.slowTime, p.ultimate and (m.id == "boss" and 0.6 or 1.5) or 0.6)
+                m.slowRatio = math.max(m.slowRatio, p.ultimate and 0.4 or 0.25)
+            end
+        end
+        if p.ultimate then PullEnemies(p, p.endX, p.endY, 180, 6, 70)
+        elseif IsDefenderActive(p.owner) and p.level == 3 and IsMonsterAlive(p.target) then
+            p.owner.gravityHits = (p.owner.gravityHits or 0) + 1
+            if p.owner.gravityHits % 3 == 0 then PullEnemies(p, p.endX, p.endY, 100, 3, 35) end
+        end
+    end
+    SpawnParticle(p.endX, p.endY, radius, config.color)
+end
+
+function UpdateExtraProjectile(p, dt)
+    if (p.kind == "gravity_engineer" and not p.ultimate) or p.kind == "stormcaller" or (p.kind == "rail_sniper" and not p.ultimate) then
+        if IsMonsterAlive(p.target) then p.endX,p.endY = p.target.x,p.target.y end
+    end
+    p.elapsed = p.elapsed + dt
+    local t = math.min(1, p.elapsed / p.duration)
+    p.prevX, p.prevY = p.x, p.y
+    p.x, p.y = p.startX + (p.endX - p.startX) * t, p.startY + (p.endY - p.startY) * t
+    local pathAttack = p.kind == "blade_dancer" or (p.kind == "rail_sniper" and p.ultimate)
+    if pathAttack then
+        local dx, dy = p.x - p.prevX, p.y - p.prevY
+        local candidates = {}
+        for _, m in ipairs(game.monsters) do
+            local u = math.max(0, math.min(1, ((m.x-p.prevX)*dx+(m.y-p.prevY)*dy) / math.max(0.001,dx*dx+dy*dy)))
+            if not p.visited[m] and (m.x-p.prevX-u*dx)^2+(m.y-p.prevY-u*dy)^2 <= 32^2 then
+                candidates[#candidates+1] = {m=m,u=u}
+            end
+        end
+        table.sort(candidates,function(a,b) return a.u<b.u end)
+        for _, hit in ipairs(candidates) do
+            if p.count < (p.ultimate and 3 or (p.level == 1 and 2 or 3)) then
+                p.visited[hit.m], p.count = true, p.count + 1
+                local multiplier = p.returning and 0.5 or 1
+                if p.kind == "rail_sniper" then multiplier = ({1,0.5,0.25})[p.count] end
+                ExtraDamage(p,hit.m,multiplier,p.kind == "rail_sniper" and 0.5 or 0)
+                SpawnParticle(hit.m.x,hit.m.y,25,defenderTypes[p.kind].color)
+            end
+        end
+    end
+    if t < 1 then return false end
+    if p.kind == "blade_dancer" and not p.returning then
+        p.returning, p.elapsed, p.count, p.visited = true, 0, 0, {}
+        p.startX,p.endX,p.startY,p.endY = p.endX,p.startX,p.endY,p.startY
+        return false
+    elseif p.kind == "stormcaller" then
+        if IsMonsterAlive(p.target) then ExtraDamage(p,p.target); p.visited[p.target]=true end
+        p.count = p.count + 1
+        SpawnParticle(p.endX,p.endY,28,defenderTypes[p.kind].color)
+        local cap = p.ultimate and 6 or (p.level == 1 and 2 or 3)
+        if p.count < cap then
+            for _, m in ipairs(NearbyEnemies(p.endX,p.endY,p.ultimate and 220 or 155,1000)) do
+                if not p.visited[m] then
+                    p.startX,p.startY,p.target,p.elapsed = p.endX,p.endY,m,0
+                    p.endX,p.endY = m.x,m.y
+                    if not p.ultimate then p.damage = p.damage * 0.65 end
+                    return false
+                end
+            end
+        end
+    elseif p.kind == "rail_sniper" and not p.ultimate then
+        if IsMonsterAlive(p.target) then ExtraDamage(p,p.target,1,0.25); SpawnParticle(p.target.x,p.target.y,25,defenderTypes[p.kind].color) end
+    elseif not pathAttack then ExtraImpact(p) end
+    return true
+end
+
+function UpdateExtraStatuses(dt)
+    for i = #game.monsters, 1, -1 do
+        local m = game.monsters[i]
+        m.corrosionLeft = math.max(0, (m.corrosionLeft or 0) - dt)
+        m.pullCooldown = math.max(0, (m.pullCooldown or 0) - dt)
+        m.acidZoneCooldown = math.max(0, (m.acidZoneCooldown or 0) - dt)
+        if m.pull and m.y < 1185 then
+            local step = math.min(dt,m.pull.left)
+            m.x = math.max(100,math.min(842,m.x+m.pull.dx*step/0.25))
+            m.y = math.min(1185,m.y+m.pull.dy*step/0.25)
+            m.pull.left = m.pull.left-step
+            if m.pull.left <= 0.0001 then m.pull=nil end
+        end
+        if m.acid then
+            local a = m.acid
+            a.left,a.tick = a.left-dt,a.tick-dt
+            if a.tick <= 0.0001 then DamageMonster(m,a.damage,"magic",a.owner); a.tick=a.tick+1 end
+            if a.left <= 0.0001 then m.acid=nil end
+        end
+    end
+    local hit = {}
+    for i = #game.acidZones, 1, -1 do
+        local zone = game.acidZones[i]
+        zone.left,zone.tick = zone.left-dt,zone.tick-dt
+        if zone.tick <= 0.0001 then
+            for _, m in ipairs(NearbyEnemies(zone.x,zone.y,160,5)) do
+                if not hit[m] and (m.acidZoneCooldown or 0) <= 0.0001 then
+                    ExtraDamage(zone.payload,m); hit[m]=true; m.acidZoneCooldown=1
+                end
+                m.corrosion,m.corrosionLeft = 5,3
+            end
+            SpawnParticle(zone.x,zone.y,160,defenderTypes.alchemist.color)
+            zone.tick=zone.tick+1
+        end
+        if zone.left <= 0.0001 then table.remove(game.acidZones,i) end
     end
 end
 
@@ -894,6 +1137,10 @@ function HandleMouseDown(eventType, eventData)
         elseif HitRect(x, y, layout.homeStartButton) and game.homeTab == "home" then
             StartBattle()
         elseif game.homeTab == "guards" then
+            if HitRect(x, y, layout.homeSquadToggle) then
+                ToggleSquad(Roster.order[game.homeGuard])
+                return
+            end
             for i, r in ipairs(layout.homeGuardChoices) do
                 if HitRect(x, y, r) then game.homeGuard = i end
             end
@@ -1031,11 +1278,22 @@ end
 function BuildEventChoices(kind)
     local pool = {}
     for _, e in ipairs(events) do
-        if kind == nil or IsEventForKind(e.id, kind) then
+        local eligible = false
+        for _, role in ipairs(game.squad) do
+            if IsEventForKind(e.id, role) then eligible = true end
+        end
+        if eligible and (kind == nil or IsEventForKind(e.id, kind)) then
             table.insert(pool, e)
         end
     end
-    if #pool < 3 then pool = events end
+    for _, role in ipairs(game.squad) do
+        if Roster.extra[role] and (not kind or kind == role) and (game.rolePower[role] or 0) < 3 then
+            local id = role
+            pool[#pool + 1] = { id = id .. "_power", title = defenderTypes[id].name .. "强化",
+                desc = "本局该职业普通攻击伤害 +10%，最多三次",
+                apply = function() game.rolePower[id] = (game.rolePower[id] or 0) + 1 end }
+        end
+    end
 
     local choices = {}
     local used = {}
@@ -1057,7 +1315,7 @@ function IsEventForKind(id, kind)
     elseif kind == "mage" then
         return id == "frost_damage" or id == "frost_area" or id == "deep_freeze" or id == "attack_up"
     end
-    return true
+    return id == "attack_up" or id == "attack_speed" or id == "wall_fortify"
 end
 
 function ApplyEventChoice(index)
@@ -1092,10 +1350,7 @@ function CreateDefender(kind, level, slot)
 end
 
 function RandomDefenderKind()
-    local r = math.random()
-    if r < 0.40 then return "archer" end
-    if r < 0.75 then return "mage" end
-    return "healer"
+    return game.squad[math.random(1, #game.squad)]
 end
 
 function dragDefender()
@@ -1152,10 +1407,8 @@ function RebuildLayout(width, height)
         homeStartButton = { x = 181, y = homeBottom - 350, w = 580, h = 116 },
         homeStageY = homeBottom * 0.59,
         homeGuardChoices = {
-            { x = 198, y = homeBottom - 490, w = 160, h = 120 },
-            { x = 391, y = homeBottom - 490, w = 160, h = 120 },
-            { x = 584, y = homeBottom - 490, w = 160, h = 120 },
         },
+        homeSquadToggle = { x = 251, y = homeBottom - 270, w = 440, h = 78 },
         homeLevelChoices = {
             { x = 273, y = 416, w = 132, h = 66 },
             { x = 405, y = 416, w = 132, h = 66 },
@@ -1170,6 +1423,10 @@ function RebuildLayout(width, height)
         viewportHeight = height,
         resultHomeButton = { x = 321, y = 855, w = 300, h = 70 },
     }
+    for i = 1, #Roster.order do
+        layout.homeGuardChoices[i] = { x = 66 + ((i - 1) % 3) * 278,
+            y = homeBottom - 782 + math.floor((i - 1) / 3) * 148, w = 254, h = 134 }
+    end
 end
 
 function ToScreen(x, y)
@@ -1269,7 +1526,7 @@ function DrawBackground(ctx, width, height)
 end
 
 function DrawHome(ctx)
-    local footerHeight = game.homeTab == "guards" and 540 or (game.homeTab == "mecha" and 460 or 370)
+    local footerHeight = game.homeTab == "guards" and 770 or (game.homeTab == "mecha" and 460 or 370)
     DrawHomeBand(ctx, layout.homeHomeButton.y - footerHeight, footerHeight, { 28, 65, 67, 230 })
     DrawHomeHeader(ctx)
     if game.homeTab == "home" then
@@ -1334,46 +1591,69 @@ end
 function DrawHomeSquad(ctx)
     local y = layout.homeStageY
     local bob = math.sin(game.time * 1.8) * 4
-    DrawHomeArt(ctx, "archer3", 252, y - 58 + bob, 280)
-    DrawHomeArt(ctx, "healer3", 702, y - 55 - bob, 272)
-    DrawHomeArt(ctx, "mage3", 476, y - 42 + bob, 330)
+    local names = {}
+    for i, id in ipairs(game.squad) do
+        DrawRosterArt(ctx, id, 3, 471 + (i - (#game.squad + 1) / 2) * 235, y - 45 + bob, 270)
+        names[#names + 1] = defenderTypes[id].name
+    end
     local infoY = layout.homeStartButton.y - 76
-    DrawText(ctx, "弓箭手  ·  冰霜法师  ·  祝福者", 471, infoY - 42, 28, { 248, 250, 245 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, #names > 0 and table.concat(names, " · ") or "尚未选择出征守卫", 471, infoY - 42, 26, { 248, 250, 245 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     DrawText(ctx, "10 波进攻    /    1 位首领", 471, infoY, 26, { 186, 216, 201 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 end
 
 function DrawHomeGuardsPage(ctx)
-    local guards = {
-        { id = "archer", name = "弓箭手", role = "远程输出", icon = "swords", skill = "星辉重箭", desc = "宽幅重箭命中后爆炸", basic = "箭矢精准打击，三级追加范围伤害" },
-        { id = "mage", name = "冰霜法师", role = "范围控制", icon = "snowflake", skill = "绝对零域", desc = "冰晶扩散，冻结范围内敌人", basic = "冰弹减速敌人，三级追加溅射伤害" },
-        { id = "healer", name = "祝福者", role = "团队辅助", icon = "heart", skill = "生命超载", desc = "修复城墙，强化全队攻击与攻速", basic = "祝福队友，没有祝福目标时修复城墙" },
-    }
-    local selected = guards[game.homeGuard]
-    DrawHomeHeading(ctx, "守卫图鉴", selected.name)
-    DrawText(ctx, selected.role, 471, 362, 25, { 35, 77, 77 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local id = Roster.order[game.homeGuard]
+    local selected = defenderTypes[id]
+    DrawText(ctx, "守卫图鉴", 65, 190, 28, {35,77,77}, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "出征 " .. #game.squad .. "/3", 877, 190, 28, {35,77,77}, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, selected.name, 471, 277, 42, {28,63,65}, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local descriptions = { archer="箭矢精准打击，三级追加范围伤害", mage="冰弹减速敌人，三级追加溅射伤害", healer="祝福队友，无目标时修复城墙" }
+    DrawText(ctx, selected.desc or descriptions[id], 471, 345, 25, {35,77,77}, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     for i, r in ipairs(layout.homeLevelChoices) do
         DrawHomeChoice(ctx, r, game.homeLevel == i)
         DrawText(ctx, ({ "I", "II", "III" })[i], r.x + r.w / 2, r.y + r.h / 2, 27,
             game.homeLevel == i and { 255, 255, 250 } or { 28, 63, 65 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
-    local y = layout.homeStageY - 240 + math.sin(game.time * 1.8) * 4
+    local gridY = layout.homeGuardChoices[1].y
+    local y = (490 + gridY - 60) / 2
+    local artSize = math.min(285, gridY - 570)
     if game.homeLevel == 2 then
-        DrawHomeArt(ctx, selected.id .. "1", 380, y + 16, 290)
-        DrawHomeArt(ctx, selected.id .. "1", 565, y - 8, 290)
+        DrawRosterArt(ctx, id, 1, 390, y, artSize * 0.8)
+        DrawRosterArt(ctx, id, 1, 552, y, artSize * 0.8)
     else
-        DrawHomeArt(ctx, selected.id .. game.homeLevel, 471, y, 430)
+        DrawRosterArt(ctx, id, game.homeLevel, 471, y, artSize)
     end
-    local infoY = layout.homeGuardChoices[1].y - 122
-    DrawHomeIcon(ctx, selected.icon, "gold", 471, infoY - 53, 38)
-    DrawText(ctx, game.homeLevel == 3 and selected.skill or selected.role, 471, infoY, 33, { 255, 227, 176 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    DrawText(ctx, game.homeLevel == 3 and selected.desc or selected.basic, 471, infoY + 48, 27, { 240, 246, 236 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    DrawText(ctx, "终极 · " .. UltimateName(id), 471, gridY - 37, 26, {255,227,176}, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     for i, r in ipairs(layout.homeGuardChoices) do
         DrawHomeChoice(ctx, r, game.homeGuard == i)
-        DrawHomeArt(ctx, guards[i].id .. "3", r.x + r.w / 2, r.y + 42, 76)
-        DrawText(ctx, guards[i].name, r.x + r.w / 2, r.y + 99, 26,
+        local role = Roster.order[i]
+        DrawRosterArt(ctx, role, 3, r.x + 52, r.y + 56, 91)
+        DrawText(ctx, defenderTypes[role].name, r.x + 164, r.y + 47, 23,
             game.homeGuard == i and { 255, 255, 250 } or { 28, 63, 65 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        DrawText(ctx, Roster.Contains(game.squad, role) and "已出征" or "待命", r.x + 164, r.y + 89, 22,
+            game.homeGuard == i and {255,227,176} or {65,92,86}, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     end
-    DrawText(ctx, "三级守卫击杀充能，满怒后释放终极", 471, layout.homeStartButton.y + 45, 27, { 211, 231, 217 }, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local toggle = layout.homeSquadToggle
+    DrawHomeChoice(ctx, toggle, true)
+    DrawHomeIcon(ctx,"shield","gold",toggle.x+58,toggle.y+toggle.h/2,34)
+    DrawText(ctx,Roster.Contains(game.squad,id) and "撤下守卫" or "加入出征",toggle.x+toggle.w/2+15,toggle.y+toggle.h/2,30,{255,235,183},NVG_ALIGN_CENTER+NVG_ALIGN_MIDDLE)
+end
+
+function DrawRosterArt(ctx, kind, level, x, y, size)
+    if not Roster.extra[kind] then DrawHomeArt(ctx, kind .. level, x, y, size); return end
+    local sx,sy = ToScreen(x,y)
+    DrawExtraSprite(ctx,kind,sx,sy+size*layout.scale*0.42,size*layout.scale)
+end
+
+function DrawExtraSprite(ctx, kind, sx, sy, size)
+    local img = images[kind .. "_standing"]
+    if not img then return end
+    -- All six sprites share the exported 128,234 foot anchor on a 256px canvas.
+    local left,top = sx-size/2,sy-size*234/256
+    nvgBeginPath(ctx)
+    nvgRect(ctx,left,top,size,size)
+    nvgFillPaint(ctx,nvgImagePattern(ctx,left,top,size,size,0,img,1))
+    nvgFill(ctx)
 end
 
 function DrawHomeChoice(ctx, r, selected)
@@ -1566,7 +1846,20 @@ function DrawDefender(ctx, d, x, y)
     nvgFillColor(ctx, nvgRGBA(c[1], c[2], c[3], d.buffTime > 0 and 120 or 70))
     nvgFill(ctx)
 
-    if d.level == 2 then
+    if Roster.extra[d.kind] then
+        if d.level == 2 then
+            DrawExtraSprite(ctx,d.kind,sx-18*layout.scale,sy+12*layout.scale,size*0.78)
+            DrawExtraSprite(ctx,d.kind,sx+18*layout.scale,sy+12*layout.scale,size*0.78)
+        else DrawExtraSprite(ctx,d.kind,sx,sy+12*layout.scale,size) end
+        if d.action then
+            local pulse = math.sin(actionProgress * math.pi)
+            nvgBeginPath(ctx)
+            nvgCircle(ctx,sx,sy-size*0.42,(5+10*pulse)*layout.scale)
+            nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],math.floor(210*pulse)))
+            nvgStrokeWidth(ctx,2*layout.scale)
+            nvgStroke(ctx)
+        end
+    elseif d.level == 2 then
         DrawLevelTwoPair(ctx, d, sx, sy, size, actionProgress)
     elseif img ~= nil then
         DrawDefenderSprite(ctx, img, sx, sy, size)
@@ -1723,7 +2016,47 @@ function DrawMonsters(ctx)
     end
 end
 
+function DrawExtraProjectile(ctx,p,sx,sy)
+    local c = defenderTypes[p.kind].color
+    local scale = layout.scale
+    local t = math.min(1,p.elapsed/p.duration)
+    if p.kind == "bombardier" or p.kind == "alchemist" then
+        sy = sy - math.sin(t*math.pi)*75*scale
+        local tx,ty = ToScreen(p.endX,p.endY)
+        nvgBeginPath(ctx); nvgCircle(ctx,tx,ty,(p.ultimate and 35 or 18)*scale)
+        nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],135)); nvgStrokeWidth(ctx,2*scale); nvgStroke(ctx)
+    end
+    if p.kind == "stormcaller" then
+        local x,y = ToScreen(p.startX,p.startY)
+        nvgBeginPath(ctx); nvgMoveTo(ctx,x,y)
+        for i=1,5 do nvgLineTo(ctx,x+(sx-x)*i/6+(i%2==0 and -9 or 9)*scale,y+(sy-y)*i/6) end
+        nvgLineTo(ctx,sx,sy)
+    elseif p.kind == "blade_dancer" then
+        local r = (p.ultimate and 21 or 12)*scale
+        nvgBeginPath(ctx)
+        for i=0,8 do
+            local a = p.elapsed*20+i*math.pi/6
+            local x,y = sx+math.cos(a)*r,sy+math.sin(a)*r
+            if i==0 then nvgMoveTo(ctx,x,y) else nvgLineTo(ctx,x,y) end
+        end
+    else
+        local px,py = ToScreen(p.prevX,p.prevY)
+        nvgBeginPath(ctx); nvgMoveTo(ctx,px,py); nvgLineTo(ctx,sx,sy)
+    end
+    nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],240)); nvgStrokeWidth(ctx,(p.ultimate and 6 or 3)*scale); nvgStroke(ctx)
+    if p.kind ~= "blade_dancer" then
+        nvgBeginPath(ctx); nvgCircle(ctx,sx,sy,(p.ultimate and 11 or 6)*scale)
+        nvgFillColor(ctx,nvgRGBA(c[1],c[2],c[3],255)); nvgFill(ctx)
+    end
+end
+
 function DrawProjectiles(ctx)
+    for _, zone in ipairs(game.acidZones) do
+        local x,y = ToScreen(zone.x,zone.y)
+        nvgBeginPath(ctx); nvgCircle(ctx,x,y,160*layout.scale)
+        nvgFillColor(ctx,nvgRGBA(194,238,83,28)); nvgFill(ctx)
+        nvgStrokeColor(ctx,nvgRGBA(194,238,83,135)); nvgStrokeWidth(ctx,2*layout.scale); nvgStroke(ctx)
+    end
     for _, p in ipairs(game.projectiles) do
         local sx, sy = ToScreen(p.x, p.y)
         local psx, psy = ToScreen(p.prevX, p.prevY)
@@ -1731,7 +2064,9 @@ function DrawProjectiles(ctx)
         local length = math.max(0.001, math.sqrt(dx * dx + dy * dy))
         local ux, uy = dx / length, dy / length
 
-        if p.kind == "star_arrow" then
+        if p.extra then
+            DrawExtraProjectile(ctx,p,sx,sy)
+        elseif p.kind == "star_arrow" then
             nvgBeginPath(ctx)
             nvgMoveTo(ctx, sx - ux * 74 * layout.scale, sy - uy * 74 * layout.scale)
             nvgLineTo(ctx, sx, sy)

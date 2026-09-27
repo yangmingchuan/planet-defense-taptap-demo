@@ -1,4 +1,5 @@
 -- Deterministic layout proof from the real NanoVG calls, not an engine screenshot.
+package.path = "scripts/?.lua;" .. package.path
 package.preload["LuaScripts/Utilities/Sample"] = function() return {} end
 package.preload["urhox-libs/UI"] = function() return {} end
 NVG_ALIGN_LEFT, NVG_ALIGN_CENTER, NVG_ALIGN_RIGHT, NVG_ALIGN_MIDDLE = 1, 2, 4, 16
@@ -49,9 +50,12 @@ function nvgText(_, x, y, text)
 end
 assert(loadfile("scripts/main.lua"))()
 ResetGame("home")
+if arg[4] then
+    for _, id in ipairs({"archer","mage","healer","bombardier","stormcaller","rail_sniper"}) do ToggleSquad(id) end
+end
 for i = 1, 80 do
     local name, value = debug.getupvalue(DrawHome, i)
-    if name == "game" then value.homeTab = page; break end
+    if name == "game" then value.homeTab = page; value.homeGuard = tonumber(arg[4]) or 1; break end
 end
 LoadImages()
 RebuildLayout(width, height)

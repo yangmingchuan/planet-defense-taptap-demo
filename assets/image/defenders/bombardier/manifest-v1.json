@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "source": "assets/design/defenders/bombardier/poses-v1.png",
+  "canvas": [
+    256,
+    256
+  ],
+  "footAnchor": [
+    128,
+    234
+  ],
+  "standing": "standing-v1.png",
+  "status": "prototype-static-pose",
+  "animationFrames": false,
+  "sourceRect": [
+    17,
+    231,
+    456,
+    504
+  ]
+}

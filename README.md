@@ -36,6 +36,7 @@ Maker 构建入口为 `scripts/main.lua`，构建参数为 `entry=main.lua`、`s
 
 - [MVP 产品基线（当前验收依据）](docs/mvp-product-prd.md)
 - [技术 PRD（架构、定位与待办）](docs/technical-prd.md)
+- [角色设计库（六名新角色、造型动画规范与复用模板，尚未实现）](docs/characters/README.md)
 - [历史产品方案（含未实现规划）](docs/zombie-garden-prd.md)
 - [怪物素材预览](docs/monster-library-desktop.png)
 - [防守角色素材预览](docs/defender-library-desktop.png)
