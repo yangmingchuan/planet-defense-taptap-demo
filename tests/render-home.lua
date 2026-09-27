@@ -59,8 +59,29 @@ for i = 1, 80 do
 end
 LoadImages()
 RebuildLayout(width, height)
-DrawBackground({}, width, height)
-DrawHome({})
+if page=="battle" then
+    ResetGame("playing"); RebuildLayout(width,height)
+    local g
+    for i=1,80 do local n,v=debug.getupvalue(DrawHome,i); if n=="game" then g=v; break end end
+    math.randomseed(27)
+    g.wave=7; g.spawnRemaining=0; g.waveTimer=100
+    for i=1,65 do
+        SpawnMonsterForWave()
+        local m=g.monsters[#g.monsters]
+        m.x=155+((i-1)%9)*76; m.y=390+math.floor((i-1)/9)*94
+        m.hp,m.maxHp=180,180
+    end
+    local kinds={"bombardier","rail_sniper","mage"}
+    for i=1,10 do
+        g.defenders[i]=CreateDefender(kinds[(i-1)%3+1],3,i)
+        g.defenders[i].cooldown=(i%4)*0.14
+    end
+    for i=1,tonumber(arg[4]) or 25 do HandleUpdate(nil,{GetFloat=function() return 0.05 end}) end
+    DrawScene({},width,height)
+else
+    DrawBackground({}, width, height)
+    DrawHome({})
+end
 print(string.format('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">',width,height,width,height))
 print(table.concat(output, "\n"))
 print('</svg>')

@@ -1,6 +1,8 @@
 # 星球防线 MVP 技术 PRD
 
-版本：2026-09-26。业务依据：`mvp-product-prd.md`。本文记录实际架构、实现约束与技术欠账，防止将设想当成已实现系统。
+版本：2026-09-27。业务依据：`mvp-product-prd.md`。本文记录实际架构、实现约束与技术欠账，防止将设想当成已实现系统。
+
+本轮 [战斗表现增量](combat-feel-prd.md) 新增 `BattleTuning.lua`、`CombatFX.lua`、`BattleAudio.lua`，分别管理怪潮数值、限额视觉效果和复用音效声源。伤害仍由main.lua命中逻辑负责；音频通过独立Scene持有声源，停止游戏时释放，ResourceCache路径省略assets前缀。
 
 新增角色的目标架构在 [角色实现契约](characters/implementation-contract.md)，完整契约仍是设计目标。2026-09-27本地已接入 [九角色编队原型](characters/squad-prototype-prd.md)：`scripts/Roster.lua`管理角色配置和编队校验；`main.lua`管理编队快照、额外弹道、酸蚀/聚拢和NanoVG绘制；与目标契约的差异见增量文档。
 
@@ -63,7 +65,7 @@
 
 Update 顺序：波次 → 怪物 → 守卫 → 弹道 → 特效 → 失败检查。dt 最大截断 0.05；此策略可能在低帧率时令游戏变慢，不能称为固定时间步模拟。
 
-- 波次：`StartNextWave`、`SpawnMonsterForWave`。第十波 9 次投放，spawnRemaining=1 才投 Boss。
+- 波次：`StartNextWave`、`SpawnMonsterForWave`，数量读取BattleTuning。第十波65次投放，spawnRemaining=1才投Boss；80只上限后等待位置，不丢弃投放。
 - 攻击：`BeginDefenderAction` 锁定目标，`UpdateDefenderAction` 在动画 62% 时释放，`ResolveProjectile` 命中结算。
 - 怪物攻击在攻击动画 58% 处扣墙；冻结暂停移动与出手。
 - 伤害：`DamageMonster` → `KillMonster`。dead 防止重复死亡；死亡立即移除、发银币、怒气、飘字。
@@ -87,7 +89,7 @@ Update 顺序：波次 → 怪物 → 守卫 → 弹道 → 特效 → 失败检
 | 问题 | 当前行为 | 后续要求 |
 |---|---|---|
 | 长线成长 | 只有展示页 | 设计 profile 存档版本、奖励去重、升级消费原子性后实现 |
-| 初始银币 | 80，而早期要求曾为 500 | 在平衡变更中明确决策，勿静默改回 |
+| 初始银币 | 密集怪潮版本已改500 | 随随机编队难度继续验证经济 |
 | 事件模态 | 弹窗时战斗继续 Update | 需产品决定是否暂停并做一致测试 |
 | 强化叠加 | 部分概率可超过 100%，贯穿次数不增收益 | 定义上限、过滤已满级事件与说明文案 |
 | 三级事件 | 每次合成三级都弹出 | 若改首次触发，增加职业标记与回归测试 |

@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const sharp = require('sharp');
 const dir = path.resolve(__dirname, '../assets/image/home/icons');
-const names = ['castle', 'shield', 'bot', 'orbit', 'swords', 'snowflake', 'heart', 'lock-keyhole'];
+const names = process.argv.includes('--audio-only') ? ['volume-2','volume-x'] : ['castle', 'shield', 'bot', 'orbit', 'swords', 'snowflake', 'heart', 'lock-keyhole', 'volume-2', 'volume-x'];
 async function main() {
   await fs.mkdir(dir, { recursive: true });
   for (const name of names) {

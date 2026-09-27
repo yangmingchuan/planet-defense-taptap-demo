@@ -2,6 +2,9 @@ require "LuaScripts/Utilities/Sample"
 
 local UI = require("urhox-libs/UI")
 local Roster = require("Roster")
+local CombatFX = require("CombatFX")
+local BattleAudio = require("BattleAudio")
+local BattleTuning = require("BattleTuning")
 local selectedSquad = { "archer", "mage", "healer" }
 
 local DESIGN_W = 942
@@ -164,6 +167,7 @@ function Start()
 
     fontId = nvgCreateFont(nvgContext, "sans", "Fonts/MiSans-Regular.ttf")
     LoadImages()
+    BattleAudio.Init()
     ResetGame("home")
 
     SubscribeToEvent(nvgContext, "NanoVGRender", "HandleRender")
@@ -177,6 +181,7 @@ function Start()
 end
 
 function Stop()
+    BattleAudio.Shutdown()
     UI.Shutdown()
     if nvgContext ~= nil then
         for _, handle in pairs(images) do
@@ -207,7 +212,7 @@ function LoadImages()
     for id in pairs(Roster.extra) do
         LoadImage(id .. "_standing", "assets/image/defenders/" .. id .. "/standing-v1.png")
     end
-    for _, icon in ipairs({ "castle", "shield", "bot", "orbit", "swords", "snowflake", "heart", "lock-keyhole" }) do
+    for _, icon in ipairs({ "castle", "shield", "bot", "orbit", "swords", "snowflake", "heart", "lock-keyhole", "volume-2", "volume-x" }) do
         for _, tone in ipairs({ "light", "dark", "gold" }) do
             LoadImage("icon_" .. icon .. "_" .. tone, "assets/image/home/icons/" .. icon .. "-" .. tone .. ".png")
         end
@@ -241,6 +246,7 @@ function LoadImages()
 end
 
 function ResetGame(initialState)
+    BattleAudio.Stop()
     drag = nil
     game = {
         state = initialState or "home",
@@ -250,7 +256,10 @@ function ResetGame(initialState)
         squad = Roster.Copy(selectedSquad),
         rolePower = {},
         acidZones = {},
-        silver = 80,
+        silver = BattleTuning.startingSilver,
+        combatFx = CombatFX.New(),
+        combo = 0,
+        comboTime = 0,
         summonCost = 20,
         eventCost = 60,
         wave = 0,
@@ -316,6 +325,9 @@ function HandleUpdate(eventType, eventData)
     if dt > 0.05 then dt = 0.05 end
     game.time = game.time + dt
     toast.time = math.max(0, toast.time - dt)
+    BattleAudio.Update(dt,game.state == "playing")
+    game.comboTime = math.max(0,game.comboTime-dt)
+    if game.comboTime == 0 then game.combo = 0 end
 
     if game.state == "playing" then
         UpdateWave(dt)
@@ -342,19 +354,22 @@ function UpdateWave(dt)
         end
     end
 
-    if game.spawnRemaining > 0 then
+    if game.spawnRemaining > 0 and #game.monsters < BattleTuning.maxMonsters then
         game.spawnTimer = game.spawnTimer - dt
         if game.spawnTimer <= 0 then
-            game.spawnTimer = math.max(0.35, 1.0 - game.wave * 0.04)
-            SpawnMonsterForWave()
-            game.spawnRemaining = game.spawnRemaining - 1
+            game.spawnTimer = BattleTuning.packInterval(game.wave)
+            local count = math.min(BattleTuning.packSize(game.wave),game.spawnRemaining,BattleTuning.maxMonsters-#game.monsters)
+            for _=1,count do
+                SpawnMonsterForWave()
+                game.spawnRemaining = game.spawnRemaining - 1
+            end
         end
     end
 end
 
 function StartNextWave()
     game.wave = game.wave + 1
-    game.spawnRemaining = game.wave == 10 and 9 or (4 + game.wave * 2)
+    game.spawnRemaining = BattleTuning.waveCount(game.wave)
     game.spawnTimer = 0.1
     game.silver = game.silver + 20
     AddFloat(180, 1420, "+20 波次奖励", { 255, 230, 120 })
@@ -367,26 +382,29 @@ function SpawnMonsterForWave()
     local id = "basic"
     if game.wave == 10 and game.spawnRemaining == 1 then
         id = "boss"
-    elseif game.wave >= 7 and math.random() < 0.30 then
+    elseif game.wave >= 7 and math.random() < 0.12 then
         id = "armored"
-    elseif game.wave >= 5 and math.random() < 0.35 then
+    elseif game.wave >= 5 and math.random() < 0.15 then
         id = "tank"
     elseif game.wave >= 3 and math.random() < 0.35 then
         id = "agile"
     end
 
     local src = monsterTypes[id]
-    local x = 260 + math.random() * 420
+    local x = 155 + math.random() * 630
+    local swarm = id == "basic" or id == "agile"
+    local hp = (src.hp + game.wave * (id == "boss" and 10 or 5)) * (swarm and BattleTuning.swarmHealth or 1)
     table.insert(game.monsters, {
         id = id,
         x = x,
-        y = 250,
-        hp = src.hp + game.wave * (id == "boss" and 10 or 5),
-        maxHp = src.hp + game.wave * (id == "boss" and 10 or 5),
+        y = 240 + math.random()*100,
+        hp = hp,
+        maxHp = hp,
         speed = src.speed,
         defense = src.defense,
-        damage = src.damage,
-        silver = src.silver,
+        damage = swarm and BattleTuning.swarmDamage or src.damage,
+        silver = swarm and BattleTuning.swarmSilver or src.silver,
+        swarm = swarm,
         slowTime = 0,
         slowRatio = 0,
         freezeTime = 0,
@@ -403,6 +421,7 @@ function UpdateMonsters(dt)
     local wallY = 1185
     for i = #game.monsters, 1, -1 do
         local m = game.monsters[i]
+        m.hitFlash = math.max(0,(m.hitFlash or 0)-dt)
         if m.freezeTime > 0 then
             m.freezeTime = m.freezeTime - dt
         elseif m.y < wallY then
@@ -450,6 +469,7 @@ end
 
 function UpdateDefenders(dt)
     for i, d in pairs(game.defenders) do
+        d.overdriveTime = math.max(0,(d.overdriveTime or 0)-dt)
         d.mergeTime = math.max(0, (d.mergeTime or 0) - dt)
         d.ultimateFlash = math.max(0, (d.ultimateFlash or 0) - dt)
         if d ~= dragDefender() then
@@ -472,7 +492,7 @@ function UpdateDefenders(dt)
 end
 
 function BeginDefenderAction(slotIndex, d)
-    local speedBonus = 1 + game.bonuses.attackSpeed + (d.buffSpeed or 0)
+    local speedBonus = 1 + game.bonuses.attackSpeed + (d.buffSpeed or 0) + ((d.overdriveTime or 0)>0 and 1 or 0)
     local interval = defenderTypes[d.kind].cooldown[d.level] / speedBonus
     local target = nil
     local action = d.kind
@@ -538,26 +558,38 @@ function ReleaseDefenderAction(slotIndex, d)
 
     local target = d.actionTarget
     if not IsMonsterAlive(target) then return end
+    local shots = d.level == 3 and 3 or 2
+    if #game.projectiles>160 then shots=1 end
+    BattleAudio.Play("shot")
+    CombatFX.Emit(game.combatFx,"hit",start.x,start.y-45,38,defenderTypes[d.kind].color)
 
     if d.kind == "archer" then
         local dmg = defenderTypes.archer.attack[d.level] + game.bonuses.attackFlat
         dmg = dmg * (1 + (d.buffAttack or 0))
-        CreateProjectile("arrow", start.x, start.y - 35, target, {
-            damage = dmg,
+        for shot=1,shots do
+        CreateProjectile("arrow", start.x+(shot-(shots+1)/2)*8, start.y - 35, target, {
+            damage = dmg/shots,
+            share = 1/shots,
             explosion = game.bonuses.archerExplosion > 0 and math.random() < game.bonuses.archerExplosion,
             pierce = d.level == 3 or game.bonuses.archerPierce > 0,
             owner = d,
         })
+        game.projectiles[#game.projectiles].delay=(shot-1)*BattleTuning.volleyInterval
+        end
     elseif d.kind == "mage" then
-        local dmg = (defenderTypes.mage.attack[d.level] + game.bonuses.attackFlat) * (1 + game.bonuses.mageDamage)
-        CreateProjectile("frost", start.x, start.y - 35, target, {
-            damage = dmg,
+        local dmg = (defenderTypes.mage.attack[d.level] + game.bonuses.attackFlat) * (1 + game.bonuses.mageDamage) * (1+(d.buffAttack or 0))
+        for shot=1,shots do
+        CreateProjectile("frost", start.x+(shot-(shots+1)/2)*12, start.y - 35, target, {
+            damage = dmg/shots,
+            share = 1/shots,
             level = d.level,
             slowTime = 1.6 + d.level * 0.25,
             slowRatio = math.min(0.75, defenderTypes.mage.slow[d.level] + 0.05),
             freeze = math.random() < game.bonuses.freezeChance,
             owner = d,
         })
+        game.projectiles[#game.projectiles].delay=(shot-1)*BattleTuning.volleyInterval
+        end
     end
 end
 
@@ -566,7 +598,7 @@ function FindTarget(d)
     local bestY = -99999
     local sx = slotDefs[d.slot].x
     local sy = slotDefs[d.slot].y
-    local range = defenderTypes[d.kind].range
+    local range = defenderTypes[d.kind].range + BattleTuning.rangedRangeBonus
     for _, m in ipairs(game.monsters) do
         local dx = m.x - sx
         local dy = m.y - sy
@@ -597,11 +629,19 @@ function FindBestBuffTarget(excludeSlot)
     return best
 end
 
-function DamageMonster(m, amount, damageType, owner, armorIgnore)
+function DamageMonster(m, amount, damageType, owner, armorIgnore, share)
     if m == nil or m.dead then return false end
     local defense = math.max(0, m.defense - ((m.corrosionLeft or 0) > 0 and (m.corrosion or 0) or 0))
-    local final = math.max(1, amount - (damageType == "physical" and defense * (1 - (armorIgnore or 0)) or defense * 0.5))
+    share = share or 1
+    local final = math.max(share, amount - (damageType == "physical" and defense * (1 - (armorIgnore or 0)) or defense * 0.5) * share)
     m.hp = m.hp - final
+    local c = owner and defenderTypes[owner.kind].color or {255,205,100}
+    CombatFX.Emit(game.combatFx,"hit",m.x,m.y-12,28,c)
+    m.hitFlash = 0.12
+    if owner and (owner.level==3 or final>=25) and (m.damageTextTime or 0)<=game.time then
+        AddFloat(m.x,m.y-38,tostring(math.floor(final+0.5)),c)
+        m.damageTextTime=game.time+0.18
+    end
     if m.hp <= 0 then
         KillMonster(m, owner)
         return true
@@ -609,23 +649,23 @@ function DamageMonster(m, amount, damageType, owner, armorIgnore)
     return false
 end
 
-function AreaDamage(x, y, radius, amount, owner)
+function AreaDamage(x, y, radius, amount, owner, share)
     for i = #game.monsters, 1, -1 do
         local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
-            DamageMonster(m, amount, "magic", owner)
+            DamageMonster(m, amount, "magic", owner, 0, share)
         end
     end
     SpawnParticle(x, y, radius, { 255, 160, 70 })
 end
 
-function AreaSlow(x, y, radius, amount, owner)
+function AreaSlow(x, y, radius, amount, owner, share)
     for i = #game.monsters, 1, -1 do
         local m = game.monsters[i]
         local dx, dy = m.x - x, m.y - y
         if dx * dx + dy * dy <= radius * radius then
-            DamageMonster(m, amount, "magic", owner)
+            DamageMonster(m, amount, "magic", owner, 0, share)
             if not m.dead then
                 m.slowTime = math.max(m.slowTime, 1.2)
                 m.slowRatio = math.max(m.slowRatio, 0.35)
@@ -703,6 +743,10 @@ function CastReadyUltimate()
     end
 
     defender.rage = 0
+    BattleAudio.Play("ultimate")
+    if defender.kind=="archer" or defender.kind=="bombardier" or defender.kind=="rail_sniper" then
+        defender.overdriveTime = 4
+    end
     defender.ultimateFlash = 0.8
     if game.ultimateQueue[1] == defender then table.remove(game.ultimateQueue, 1) end
     local start = slotDefs[defender.slot]
@@ -755,12 +799,14 @@ end
 function KillMonster(monster, owner)
     if monster == nil or monster.dead then return end
     monster.dead = true
+    game.combo,game.comboTime = game.combo+1,2.5
+    CombatFX.Emit(game.combatFx,"burst",monster.x,monster.y,48,{255,200,85})
     for i = #game.monsters, 1, -1 do
         if game.monsters[i] == monster then
             table.remove(game.monsters, i)
             game.silver = game.silver + monster.silver
             game.kills = game.kills + 1
-            GainRage(owner, monster.id == "boss" and 50 or 25)
+            GainRage(owner, monster.id == "boss" and 50 or (monster.swarm and 10 or 25))
             if owner ~= nil and owner.buffSource ~= nil then
                 GainRage(owner.buffSource, monster.id == "boss" and 20 or 10)
             end
@@ -774,6 +820,9 @@ end
 function UpdateProjectiles(dt)
     for i = #game.projectiles, 1, -1 do
         local p = game.projectiles[i]
+        if (p.delay or 0)>0 then
+            p.delay=math.max(0,p.delay-dt)
+        else
         if p.extra then
             if UpdateExtraProjectile(p, dt) then table.remove(game.projectiles, i) end
         else
@@ -793,6 +842,7 @@ function UpdateProjectiles(dt)
                 p.x = p.x + dx / distance * step
                 p.y = p.y + dy / distance * step
             end
+        end
         end
         end
     end
@@ -822,22 +872,28 @@ function ReleaseExtraAttack(d, ultimate)
     local duration = d.kind == "rail_sniper" and distance / 1500 or 0.45
     if d.kind == "stormcaller" then duration = 0.08 end
     if d.kind == "blade_dancer" then duration = 0.36 end
+    local shots = d.kind=="bombardier" and not ultimate and d.level or 1
+    if #game.projectiles>160 then shots=1 end
+    BattleAudio.Play("shot")
+    CombatFX.Emit(game.combatFx,"hit",start.x,start.y-45,ultimate and 75 or 38,config.color)
+    for shot=1,shots do
     local p = { extra = true, kind = d.kind, x = start.x, y = start.y - 35, prevX = start.x,
         prevY = start.y - 35, startX = start.x, startY = start.y - 35,
         endX = target.x, endY = target.y, target = target, elapsed = 0, duration = duration,
-        owner = d, level = d.level, damage = damage, ultimate = ultimate, visited = {}, count = 0 }
+        owner = d, level = d.level, damage = damage/shots, share=1/shots, delay=(shot-1)*0.1, ultimate = ultimate, visited = {}, count = 0 }
     if d.kind == "rail_sniper" and ultimate then
         p.endX, p.endY = p.startX + dx / distance * 700, p.startY + dy / distance * 700
         p.duration = 700 / 1500
     end
     game.projectiles[#game.projectiles + 1] = p
+    end
 end
 
 function ExtraDamage(p, m, multiplier, ignore)
     local owner = p.owner
     -- A projectile fired at level II must not grant level III rage after a merge.
     if owner and owner.level ~= p.level then owner = nil end
-    DamageMonster(m, p.damage * (multiplier or 1), defenderTypes[p.kind].damageType, owner, ignore)
+    DamageMonster(m, p.damage * (multiplier or 1), defenderTypes[p.kind].damageType, owner, ignore, p.share)
 end
 
 function PullEnemies(p, x, y, radius, cap, amount)
@@ -857,6 +913,8 @@ function ExtraImpact(p)
     local config = defenderTypes[p.kind]
     local radius = p.ultimate and 170 or config.radius
     local cap = p.ultimate and 6 or config.cap
+    CombatFX.Emit(game.combatFx,"burst",p.endX,p.endY,radius,config.color)
+    BattleAudio.Play(p.kind=="bombardier" and "hit" or "frost")
     if p.kind == "bombardier" then
         for i, m in ipairs(NearbyEnemies(p.endX, p.endY, radius, cap)) do ExtraDamage(p, m, p.ultimate and 1 or (i == 1 and 1 or 0.55)) end
     elseif p.kind == "alchemist" then
@@ -923,13 +981,17 @@ function UpdateExtraProjectile(p, dt)
         end
     end
     if t < 1 then return false end
+    if p.kind=="rail_sniper" or p.kind=="stormcaller" then
+        CombatFX.Emit(game.combatFx,"beam",p.startX,p.startY,p.ultimate and 20 or 10,defenderTypes[p.kind].color,p.endX,p.endY)
+        BattleAudio.Play("shot")
+    end
     if p.kind == "blade_dancer" and not p.returning then
         p.returning, p.elapsed, p.count, p.visited = true, 0, 0, {}
         p.startX,p.endX,p.startY,p.endY = p.endX,p.startX,p.endY,p.startY
         return false
     elseif p.kind == "stormcaller" then
         if IsMonsterAlive(p.target) then ExtraDamage(p,p.target); p.visited[p.target]=true end
-        p.count = p.count + 1
+            p.count = p.count + 1
         SpawnParticle(p.endX,p.endY,28,defenderTypes[p.kind].color)
         local cap = p.ultimate and 6 or (p.level == 1 and 2 or 3)
         if p.count < cap then
@@ -987,13 +1049,15 @@ function UpdateExtraStatuses(dt)
 end
 
 function CreateProjectile(kind, x, y, target, payload)
-    local speed = kind == "star_arrow" and 1320 or (kind == "arrow" and 1050 or (kind == "frost" and 720 or 560))
+    local speed = kind == "star_arrow" and 1320 or (kind == "arrow" and 850 or (kind == "frost" and 650 or 560))
     table.insert(game.projectiles, {
         kind = kind,
         x = x,
         y = y,
         prevX = x,
         prevY = y,
+        originX = x,
+        originY = y,
         target = target,
         payload = payload or {},
         speed = speed,
@@ -1046,20 +1110,24 @@ function ResolveProjectile(p)
     if not IsMonsterAlive(target) then return end
     local x, y = target.x, target.y
     if p.kind == "star_arrow" then
+        CombatFX.Emit(game.combatFx,"beam",p.originX,p.originY,16,{255,220,90},x,y)
+        CombatFX.Emit(game.combatFx,"burst",x,y,155,{255,170,80})
+        BattleAudio.Play("hit")
         DamageMonster(target, payload.damage, "physical", payload.owner)
         AreaDamage(x, y, 155, payload.damage * 0.55, payload.owner)
         SpawnParticle(x, y, 155, { 255, 205, 85 })
     elseif p.kind == "arrow" then
-        DamageMonster(target, payload.damage, "physical", payload.owner)
+        DamageMonster(target, payload.damage, "physical", payload.owner,0,payload.share)
         if payload.explosion then
-            AreaDamage(x, y, 75, payload.damage * 0.45, payload.owner)
+            AreaDamage(x, y, 75, payload.damage * 0.45, payload.owner, payload.share)
         end
         if payload.pierce then
-            AreaDamage(x, y - 90, 55, payload.damage * 0.35, payload.owner)
+            AreaDamage(x, y - 90, 55, payload.damage * 0.35, payload.owner, payload.share)
         end
         SpawnParticle(x, y, payload.explosion and 75 or 24, payload.explosion and { 255, 160, 70 } or { 170, 255, 120 })
     elseif p.kind == "frost" then
-        DamageMonster(target, payload.damage, "magic", payload.owner)
+        DamageMonster(target, payload.damage, "magic", payload.owner,0,payload.share)
+        BattleAudio.Play("frost")
         if IsMonsterAlive(target) then
             target.slowTime = payload.slowTime
             target.slowRatio = payload.slowRatio
@@ -1069,7 +1137,7 @@ function ResolveProjectile(p)
             end
         end
         if payload.level == 3 then
-            AreaSlow(x, y, 75 + game.bonuses.mageArea, payload.damage * 0.40, payload.owner)
+            AreaSlow(x, y, 75 + game.bonuses.mageArea, payload.damage * 0.40, payload.owner, payload.share)
         else
             SpawnParticle(x, y, 36, { 90, 220, 255 })
         end
@@ -1077,14 +1145,17 @@ function ResolveProjectile(p)
 end
 
 function SpawnParticle(x, y, r, color)
+    if #game.particles >= 64 then return end
     table.insert(game.particles, { x = x, y = y, r = r, color = color, life = 0.35, maxLife = 0.35 })
 end
 
 function AddFloat(x, y, text, color)
+    if #game.floats >= 48 then return end
     table.insert(game.floats, { x = x, y = y, text = text, color = color, life = 1.0, maxLife = 1.0 })
 end
 
 function UpdateEffects(dt)
+    CombatFX.Update(game.combatFx,dt)
     for i = #game.floats, 1, -1 do
         local f = game.floats[i]
         f.life = f.life - dt
@@ -1112,10 +1183,16 @@ end
 function HandleMouseDown(eventType, eventData)
     local button = eventData:GetInt("Button")
     if button ~= MOUSEB_LEFT then return end
+    BattleAudio.Unlock()
 
     local sx, sy = eventData:GetInt("X"), eventData:GetInt("Y")
     local x, y = ScreenToDesign(sx, sy)
     mouse.x, mouse.y = x, y
+    if game.state ~= "home" and HitRect(x,y,layout.audioButton) then
+        BattleAudio.Toggle()
+        ShowToast(BattleAudio.muted and "战斗声音已关闭" or "战斗声音已开启")
+        return
+    end
 
     if game.eventChoices ~= nil then
         local picked = HitEventChoice(x, y)
@@ -1401,6 +1478,7 @@ function RebuildLayout(width, height)
         drawH = drawH,
         safeTop = safe.top,
         safeBottom = safe.bottom,
+        audioButton = {x=20,y=300,w=90,h=90},
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
         barracksButton = { x = 680, y = 1455, w = 245, h = 185 },
@@ -1493,6 +1571,7 @@ function DrawScene(ctx, width, height)
     DrawProjectiles(ctx)
     DrawIceBlasts(ctx)
     DrawParticles(ctx)
+    CombatFX.Draw(ctx,game.combatFx,ToScreen,layout.scale)
     DrawBottomHud(ctx)
     DrawFloats(ctx)
     DrawEventModal(ctx)
@@ -1765,6 +1844,12 @@ function DrawHomeNavItem(ctx, r, id, label, icon)
 end
 
 function DrawWorldHud(ctx)
+    local r=layout.audioButton
+    DrawHomeChoice(ctx,r,true)
+    DrawHomeIcon(ctx,BattleAudio.muted and "volume-x" or "volume-2","light",r.x+r.w/2,r.y+r.h/2,46)
+    if game.combo>=3 and game.comboTime>0 then
+        DrawText(ctx,tostring(game.combo).." 连击",820,410,34,{255,225,100},NVG_ALIGN_RIGHT+NVG_ALIGN_MIDDLE)
+    end
     DrawBar(ctx, 210, 1356, 520, 22, game.wallHp / game.wallMax, { 75, 210, 255 }, "城墙")
     DrawBar(ctx, 250, 1390, 440, 18, game.coreHp / 20, { 95, 255, 120 }, "星核")
 end
@@ -1990,7 +2075,11 @@ function DrawMonsters(ctx)
         if img ~= nil then
             nvgBeginPath(ctx)
             nvgRect(ctx, sx - size * 0.5, sy - size * 0.75, size, size)
-            nvgFillPaint(ctx, nvgImagePattern(ctx, sx - size * 0.5, sy - size * 0.75, size, size, 0, img, 1))
+            if (m.hitFlash or 0)>0 and nvgImagePatternTinted then
+                nvgFillPaint(ctx,nvgImagePatternTinted(ctx,sx-size*0.5,sy-size*0.75,size,size,0,img,nvgRGBA(255,165,120,255)))
+            else
+                nvgFillPaint(ctx, nvgImagePattern(ctx, sx - size * 0.5, sy - size * 0.75, size, size, 0, img, 1))
+            end
             nvgFill(ctx)
         else
             local c = monsterTypes[m.id].color
@@ -2022,11 +2111,27 @@ function DrawExtraProjectile(ctx,p,sx,sy)
     local t = math.min(1,p.elapsed/p.duration)
     if p.kind == "bombardier" or p.kind == "alchemist" then
         sy = sy - math.sin(t*math.pi)*75*scale
+        for tail=1,4 do
+            local oldT=math.max(0,t-tail*0.05)
+            local x,y=ToScreen(p.startX+(p.endX-p.startX)*oldT,p.startY+(p.endY-p.startY)*oldT)
+            y=y-math.sin(oldT*math.pi)*75*scale
+            nvgBeginPath(ctx); nvgCircle(ctx,x,y,(8-tail)*scale)
+            nvgFillColor(ctx,nvgRGBA(c[1],c[2],c[3],100-tail*18)); nvgFill(ctx)
+        end
         local tx,ty = ToScreen(p.endX,p.endY)
         nvgBeginPath(ctx); nvgCircle(ctx,tx,ty,(p.ultimate and 35 or 18)*scale)
         nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],135)); nvgStrokeWidth(ctx,2*scale); nvgStroke(ctx)
     end
-    if p.kind == "stormcaller" then
+    if p.kind == "rail_sniper" then
+        local x,y = ToScreen(p.startX,p.startY)
+        nvgBeginPath(ctx); nvgMoveTo(ctx,x,y); nvgLineTo(ctx,sx,sy)
+        nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],65)); nvgStrokeWidth(ctx,(p.ultimate and 24 or 12)*scale); nvgStroke(ctx)
+        nvgBeginPath(ctx); nvgMoveTo(ctx,x,y); nvgLineTo(ctx,sx,sy)
+        nvgStrokeColor(ctx,nvgRGBA(c[1],c[2],c[3],230)); nvgStrokeWidth(ctx,(p.ultimate and 10 or 5)*scale); nvgStroke(ctx)
+        nvgBeginPath(ctx); nvgMoveTo(ctx,x,y); nvgLineTo(ctx,sx,sy)
+        nvgStrokeColor(ctx,nvgRGBA(255,250,240,250)); nvgStrokeWidth(ctx,2*scale); nvgStroke(ctx)
+        return
+    elseif p.kind == "stormcaller" then
         local x,y = ToScreen(p.startX,p.startY)
         nvgBeginPath(ctx); nvgMoveTo(ctx,x,y)
         for i=1,5 do nvgLineTo(ctx,x+(sx-x)*i/6+(i%2==0 and -9 or 9)*scale,y+(sy-y)*i/6) end
@@ -2058,6 +2163,7 @@ function DrawProjectiles(ctx)
         nvgStrokeColor(ctx,nvgRGBA(194,238,83,135)); nvgStrokeWidth(ctx,2*layout.scale); nvgStroke(ctx)
     end
     for _, p in ipairs(game.projectiles) do
+        if (p.delay or 0)<=0 then
         local sx, sy = ToScreen(p.x, p.y)
         local psx, psy = ToScreen(p.prevX, p.prevY)
         local dx, dy = sx - psx, sy - psy
@@ -2119,6 +2225,7 @@ function DrawProjectiles(ctx)
             nvgCircle(ctx, sx, sy, 7 * layout.scale)
             nvgFillColor(ctx, nvgRGBA(225, 255, 145, 245))
             nvgFill(ctx)
+        end
         end
     end
 end
