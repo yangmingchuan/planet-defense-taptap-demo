@@ -4,6 +4,7 @@ local Roster = require("Roster")
 local CombatFX = require("CombatFX")
 local BattleAudio = require("BattleAudio")
 local BattleTuning = require("BattleTuning")
+local BattleDebug = require("BattleDebug")
 local selectedSquad = { "archer", "mage", "healer" }
 
 local DESIGN_W = 942
@@ -155,6 +156,7 @@ local slotDefs = {
 
 function Start()
     math.randomseed(os.time())
+    BattleDebug.Init()
     focused = true
     appliedFps = nil
 
@@ -306,11 +308,13 @@ function HandleInputFocus(_,eventData)
     focused=eventData:GetBool("Focus") and not eventData:GetBool("Minimized")
     if not focused then BattleAudio.Stop(); drag=nil end
     layoutAge=1
+    BattleDebug.Reset()
     ConfigureFrameRate(focused and (game and game.state=="playing" and 60 or 30) or 10)
 end
 
 function ResetGame(initialState)
     BattleAudio.Stop()
+    BattleDebug.Reset()
     drag = nil
     loadQueue,loadCursor={},1
     layoutAge=1
@@ -392,8 +396,9 @@ function HandleUpdate(eventType, eventData)
     local dt = eventData:GetFloat("TimeStep")
     ConfigureFrameRate(focused and (game.state=="playing" and not game.loadingBattle and 60 or 30) or 10)
     if not focused then return end
+    local debugStart=game.state~="home" and BattleDebug.BeginUpdate() or nil
     layoutAge=layoutAge+dt
-    if game.loadingBattle then ProcessBattleResources(); return end
+    if game.loadingBattle then ProcessBattleResources(); BattleDebug.EndUpdate(debugStart); return end
     if dt > 0.05 then dt = 0.05 end
     game.time = game.time + dt
     toast.time = math.max(0, toast.time - dt)
@@ -412,6 +417,7 @@ function HandleUpdate(eventType, eventData)
     else
         UpdateEffects(dt)
     end
+    BattleDebug.EndUpdate(debugStart)
 end
 
 function UpdateWave(dt)
@@ -1255,11 +1261,15 @@ end
 function HandleMouseDown(eventType, eventData)
     local button = eventData:GetInt("Button")
     if button ~= MOUSEB_LEFT then return end
-    if game.loadingBattle then return end
     BattleAudio.Unlock()
 
     local sx, sy = eventData:GetInt("X"), eventData:GetInt("Y")
     local x, y = ScreenToDesign(sx, sy)
+    if game.state~="home" and BattleDebug.Hit(layout.debugBounds,sx,sy) then
+        BattleDebug.Toggle()
+        return
+    end
+    if game.loadingBattle then return end
     mouse.x, mouse.y = x, y
     if game.state ~= "home" and HitRect(x,y,layout.audioButton) then
         BattleAudio.Toggle()
@@ -1543,6 +1553,12 @@ function RebuildLayout(width, height, safeOverride)
     local homeBottom = availableH / scale
     local homeLeft = (safe.left - dx) / scale
     local homeWidth = availableW / scale
+    local debugSafe=isHome and safe or GetHomeSafeInsets(height)
+    if not isHome then
+        debugSafe.left=math.max(debugSafe.left,dx)
+        debugSafe.right=math.max(debugSafe.right,width-dx-drawW)
+        debugSafe.top=math.max(debugSafe.top,dy)
+    end
     layout = {
         scale = scale,
         dx = dx,
@@ -1554,6 +1570,7 @@ function RebuildLayout(width, height, safeOverride)
         safeLeft = safe.left,
         safeRight = safe.right,
         homeMode = isHome,
+        debugBounds = BattleDebug.Bounds(width,height,debugSafe),
         audioButton = {x=20,y=300,w=90,h=90},
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
@@ -1642,10 +1659,12 @@ function HandleRender(eventType, eventData)
     local width = graphics:GetWidth()
     local height = graphics:GetHeight()
     EnsureLayout(width, height)
+    local debugStart=focused and game.state~="home" and BattleDebug.BeginRender() or nil
 
     nvgBeginFrame(nvgContext, width, height, 1.0)
     DrawScene(nvgContext, width, height)
     nvgEndFrame(nvgContext)
+    BattleDebug.EndRender(debugStart,game,graphics,imagePaths,BattleAudio,appliedFps)
 end
 
 function DrawScene(ctx, width, height)
@@ -1654,6 +1673,7 @@ function DrawScene(ctx, width, height)
         local ratio=(loadCursor-1)/math.max(1,#loadQueue)
         DrawText(ctx,"正在准备战场",471,730,32,{235,245,250},NVG_ALIGN_CENTER+NVG_ALIGN_MIDDLE)
         DrawBar(ctx,271,790,400,20,ratio,{90,210,215},math.floor(ratio*100).."%")
+        BattleDebug.Draw(ctx,fontId,layout.debugBounds)
         return
     end
     if game.state == "home" then
@@ -1673,6 +1693,7 @@ function DrawScene(ctx, width, height)
     DrawEventModal(ctx)
     DrawStateOverlay(ctx)
     DrawToast(ctx)
+    BattleDebug.Draw(ctx,fontId,layout.debugBounds)
 end
 
 function DrawBackground(ctx, width, height)

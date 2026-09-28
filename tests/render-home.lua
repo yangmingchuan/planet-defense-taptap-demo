@@ -79,6 +79,14 @@ if page=="battle" then
         g.defenders[i].cooldown=(i%4)*0.14
     end
     for i=1,tonumber(arg[4]) or 25 do HandleUpdate(nil,{GetFloat=function() return 0.05 end}) end
+    if arg[5]=="debug" then
+        local debug=require("BattleDebug")
+        debug.Toggle()
+        debug.rows={"FPS 32.8  上限 60","帧间隔 30.5 ms  P95 54.0","最慢帧 126 ms  >50ms 8次",
+            "逻辑 3.2 ms","绘制提交 12.4 ms","怪物 65  守卫 10  弹道 120",
+            "特效 88  飘字 24  音效 6","Lua内存 8.20 MiB","纹理 125  RGBA估算 35.6 MiB",
+            "引擎批次 180  图元 16020","画布 "..width.." x "..height,"CPU/GPU占用 N/A  |  wall ms"}
+    end
     DrawScene({},width,height)
 else
     DrawBackground({}, width, height)
