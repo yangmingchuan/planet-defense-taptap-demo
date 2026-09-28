@@ -12,6 +12,7 @@ local DESIGN_H = 1670
 local MAX_WAVES = 10
 local MONSTER_ANIMATION_FRAMES = 6
 local DEFENDER_ATTACK_FRAMES = 6
+local BATTLE_FPS_CAP = 30
 
 local nvgContext = nil
 local fontId = -1
@@ -166,7 +167,7 @@ function Start()
 
     SampleStart()
     SampleInitMouseMode(MM_FREE)
-    ConfigureFrameRate(30)
+    ConfigureFrameRate(BATTLE_FPS_CAP)
     if GetEngine then
         GetEngine():SetMaxInactiveFps(10)
         GetEngine():SetPauseMinimized(true)
@@ -309,7 +310,7 @@ function HandleInputFocus(_,eventData)
     if not focused then BattleAudio.Stop(); drag=nil end
     layoutAge=1
     BattleDebug.Reset()
-    ConfigureFrameRate(focused and (game and game.state=="playing" and 60 or 30) or 10)
+    ConfigureFrameRate(focused and BATTLE_FPS_CAP or 10)
 end
 
 function ResetGame(initialState)
@@ -394,7 +395,7 @@ end
 
 function HandleUpdate(eventType, eventData)
     local dt = eventData:GetFloat("TimeStep")
-    ConfigureFrameRate(focused and (game.state=="playing" and not game.loadingBattle and 60 or 30) or 10)
+    ConfigureFrameRate(focused and BATTLE_FPS_CAP or 10)
     if not focused then return end
     local debugStart=game.state~="home" and BattleDebug.BeginUpdate(dt) or nil
     layoutAge=layoutAge+dt

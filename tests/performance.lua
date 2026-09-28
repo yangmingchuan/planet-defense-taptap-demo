@@ -59,7 +59,7 @@ while game().loadingBattle do
     updates=updates+1; assert(updates<100)
 end
 HandleUpdate(nil,{GetFloat=function() return 1/60 end})
-assert(engine.fps==60 and #sounds==5)
+assert(engine.fps==30 and #sounds==5)
 local portraitCount=0
 for _,path in ipairs(textures) do
     if path:find("/tank/portrait") then portraitCount=portraitCount+1 end
@@ -74,7 +74,7 @@ for i=1,100 do HandleUpdate(nil,{GetFloat=function() return 1 end}) end
 assert(game().time==t and engine.fps==10)
 HandleInputFocus(nil,{GetBool=function(_,key) return key=="Focus" end})
 HandleUpdate(nil,{GetFloat=function() return 1/60 end})
-assert(game().time>t and game().time<t+0.1 and engine.fps==60)
+assert(game().time>t and game().time<t+0.1 and engine.fps==30)
 local textureCount,soundCount=#textures,#sounds
 ResetGame("home"); StartBattle()
 assert(not game().loadingBattle and #textures==textureCount and #sounds==soundCount)

@@ -34,10 +34,8 @@ function Debug.Reset()
     Debug.rows={"采样中…"}
     Debug.lastRender=nil
     Debug.updateElapsed,Debug.pendingFrameMs,Debug.clockUnreliable=0,0,false
-    Debug.elapsed,Debug.frames,Debug.intervalSum,Debug.windowMax=0,0,0,0
+    Debug.updateIntervals,Debug.updateWorst,Debug.updateStutters={},0,0
     Debug.updateSum,Debug.updates,Debug.renderSum,Debug.renders=0,0,0,0
-    Debug.worst,Debug.stutters=0,0
-    Debug.samples={}
 end
 
 function Debug.Toggle()
@@ -52,6 +50,9 @@ function Debug.BeginUpdate(rawDt)
             local ms=rawDt*1000
             Debug.updateElapsed=Debug.updateElapsed+ms
             Debug.pendingFrameMs=Debug.pendingFrameMs+ms
+            if #Debug.updateIntervals<256 then Debug.updateIntervals[#Debug.updateIntervals+1]=ms end
+            Debug.updateWorst=math.max(Debug.updateWorst,ms)
+            if ms>50 then Debug.updateStutters=Debug.updateStutters+1 end
         end
         return Debug.clock()
     end
@@ -68,20 +69,8 @@ function Debug.BeginRender()
     local now=Debug.clock()
     if Debug.lastRender then
         local measured=now-Debug.lastRender
-        local dt=measured
         if Debug.pendingFrameMs>0 and (measured<=0 or measured<Debug.pendingFrameMs*0.25) then
-            dt=Debug.pendingFrameMs
             Debug.clockUnreliable=true
-        end
-        -- Resume resets lastRender; reject clock wrap instead of displaying a fake FPS.
-        if dt>=0 then
-            Debug.elapsed=Debug.elapsed+dt
-            Debug.intervalSum=Debug.intervalSum+dt
-            Debug.frames=Debug.frames+1
-            Debug.windowMax=math.max(Debug.windowMax,dt)
-            Debug.worst=math.max(Debug.worst,dt)
-            if dt>50 then Debug.stutters=Debug.stutters+1 end
-            if #Debug.samples<256 then Debug.samples[#Debug.samples+1]=dt end
         end
     end
     Debug.lastRender=now
@@ -93,8 +82,8 @@ function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
     if not start then return end
     Debug.renderSum=Debug.renderSum+math.max(0,Debug.clock()-start)
     Debug.renders=Debug.renders+1
-    if Debug.updateElapsed<500 or Debug.frames==0 then return end
-    table.sort(Debug.samples)
+    if Debug.updateElapsed<500 or Debug.renders==0 then return end
+    table.sort(Debug.updateIntervals)
     local guards,textures,bytes,voices=0,0,0,0
     for _ in pairs(game.defenders) do guards=guards+1 end
     for _,entry in pairs(imagePaths) do
@@ -106,12 +95,12 @@ function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
         if ok and playing then voices=voices+1 end
     end
     local ok,memory=pcall(collectgarbage,"count")
-    local p95=Debug.samples[math.max(1,math.ceil(#Debug.samples*0.95))]
+    local p95=Debug.updateIntervals[math.max(1,math.ceil(#Debug.updateIntervals*0.95))]
     local fx=#game.combatFx.items+#game.particles+#game.iceBlasts
     Debug.rows={
-        "FPS "..number(Debug.frames*1000/Debug.updateElapsed,"%.1f").."  上限 "..number(fpsCap),
-        "帧间隔 "..number(Debug.intervalSum/Debug.frames,"%.1f").." ms  P95 "..number(p95,"%.1f"),
-        "最慢帧 "..number(Debug.worst,"%.0f").." ms  >50ms "..Debug.stutters.."次",
+        "更新/s "..number(Debug.updates*1000/Debug.updateElapsed,"%.0f").."  绘制/s "..number(Debug.renders*1000/Debug.updateElapsed,"%.0f"),
+        "目标 "..number(fpsCap).."  更新P95 "..number(p95,"%.1f").."ms",
+        "最慢更新 "..number(Debug.updateWorst,"%.0f").."ms  >50ms "..Debug.updateStutters.."次",
         "逻辑 "..number(not Debug.clockUnreliable and Debug.updates>0 and Debug.updateSum/Debug.updates or nil,"%.1f").." ms",
         "绘制提交 "..number(not Debug.clockUnreliable and Debug.renderSum/Debug.renders or nil,"%.1f").." ms",
         "怪物 "..#game.monsters.."  守卫 "..guards.."  弹道 "..#game.projectiles,
@@ -120,12 +109,11 @@ function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
         "纹理 "..textures.."  RGBA估算 "..number(bytes/1048576,"%.1f").." MiB",
         "引擎批次 "..number(read(graphics,"GetNumBatches")).."  图元 "..number(read(graphics,"GetNumPrimitives")),
         "画布 "..number(read(graphics,"GetWidth")).." x "..number(read(graphics,"GetHeight")),
-        "CPU/GPU占用 N/A  |  "..(Debug.clockUnreliable and "更新dt" or Debug.clockLabel),
+        "实际FPS/CPU/GPU N/A",
     }
     Debug.updateElapsed,Debug.clockUnreliable=0,false
-    Debug.elapsed,Debug.frames,Debug.intervalSum,Debug.windowMax=0,0,0,0
+    Debug.updateIntervals={}
     Debug.updateSum,Debug.updates,Debug.renderSum,Debug.renders=0,0,0,0
-    Debug.samples={}
 end
 
 function Debug.Bounds(width,height,safe)

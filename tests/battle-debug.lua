@@ -37,12 +37,12 @@ for i=1,8 do frame(11) end
 frame(195) -- 200ms frame interval must not be truncated by the simulation's 50ms clamp.
 for i=1,20 do frame(11) end
 local text=table.concat(Debug.rows,"\n")
-assert(text:find("最慢帧 200 ms",1,true) and text:find(">50ms 1次",1,true))
+assert(text:find("最慢更新 200ms",1,true) and text:find(">50ms 1次",1,true))
 assert(text:find("逻辑 2.0 ms",1,true) and text:find("绘制提交 3.0 ms",1,true))
 assert(text:find("RGBA估算 1.0 MiB",1,true) and text:find("引擎批次 72",1,true))
-assert(text:find("CPU/GPU占用 N/A",1,true))
+assert(text:find("实际FPS/CPU/GPU N/A",1,true))
 Debug.Reset(); now=now+10000
-frame(11); assert(Debug.stutters==0)
+frame(11); assert(Debug.updateStutters==0)
 for i=1,40 do
     now=now+16; Debug.BeginUpdate(0.016); local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
 end
@@ -58,7 +58,7 @@ Debug.Init(); Debug.clock=function() return now end; Debug.Toggle()
 for i=1,40 do
     now=now+16; Debug.BeginUpdate(0.016); local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
 end
-assert(table.concat(Debug.rows):find("CPU clock ms",1,true),"time source must be identified")
+assert(table.concat(Debug.rows):find("更新/s",1,true),"callback rates must remain visible")
 
 -- Maker's browser clock can stay constant while simulation and drawing continue.
 now=0
@@ -71,7 +71,17 @@ for i=1,40 do
 end
 local stalled=table.concat(Debug.rows,"\n")
 assert(not stalled:find("采样中",1,true))
-assert(stalled:find("FPS",1,true) and stalled:find("P95",1,true))
+assert(stalled:find("更新/s",1,true) and stalled:find("更新P95",1,true))
 assert(stalled:find("逻辑 N/A",1,true) and stalled:find("绘制提交 N/A",1,true))
 assert(stalled:find(">50ms 1次",1,true))
+Debug.Reset()
+for i=1,40 do
+    Debug.BeginUpdate(0.016)
+    for _=1,2 do
+        local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,30)
+    end
+end
+local updates,renders=Debug.rows[1]:match("更新/s (%d+)  绘制/s (%d+)")
+assert(updates and tonumber(renders)>tonumber(updates),"render callbacks must not be labeled FPS")
+assert(Debug.rows[#Debug.rows]=="实际FPS/CPU/GPU N/A")
 print("PASS debug toggle consumes input, disabled sampling idle, unclamped stalls, callback timing, missing counters, focus reset, viewport bounds")
