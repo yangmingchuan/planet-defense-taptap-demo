@@ -4,6 +4,8 @@
 
 本轮 [战斗表现增量](combat-feel-prd.md) 新增 `BattleTuning.lua`、`CombatFX.lua`、`BattleAudio.lua`，分别管理怪潮数值、限额视觉效果和复用音效声源。伤害仍由main.lua命中逻辑负责；音频通过独立Scene持有声源，停止游戏时释放，ResourceCache路径省略assets前缀。
 
+2026-09-28启动与帧负载修正见 [性能优化记录](performance-optimization-2026-09-28.md)：首页按需加载、分帧战斗资源、布局缓存、前后台帧率与模拟暂停。以下旧段落中关于“启动加载全部资源”和旧回归命令的表述，以增量记录及当前代码为准。
+
 新增角色的目标架构在 [角色实现契约](characters/implementation-contract.md)，完整契约仍是设计目标。2026-09-27本地已接入 [九角色编队原型](characters/squad-prototype-prd.md)：`scripts/Roster.lua`管理角色配置和编队校验；`main.lua`管理编队快照、额外弹道、酸蚀/聚拢和NanoVG绘制；与目标契约的差异见增量文档。
 
 ## 1. 技术栈与入口

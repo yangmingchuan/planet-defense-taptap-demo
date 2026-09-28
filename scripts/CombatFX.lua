@@ -1,5 +1,6 @@
 local FX = {}
 FX.limit = 96
+local white = {255,255,230}
 
 function FX.New() return { items = {}, clock = 0 } end
 
@@ -33,7 +34,7 @@ function FX.Draw(ctx,state,toScreen,scale)
             local tx,ty=toScreen(e.tx,e.ty)
             line(ctx,x,y,tx,ty,e.r*scale*2.6,e.c,65*fade)
             line(ctx,x,y,tx,ty,e.r*scale,e.c,230*fade)
-            line(ctx,x,y,tx,ty,math.max(1,e.r*0.3)*scale,{255,255,230},255*fade)
+            line(ctx,x,y,tx,ty,math.max(1,e.r*0.3)*scale,white,255*fade)
         else
             local r=e.r*scale
             if e.kind=="burst" then
@@ -43,13 +44,19 @@ function FX.Draw(ctx,state,toScreen,scale)
                 nvgBeginPath(ctx); nvgCircle(ctx,x,y,r*0.30*fade)
                 nvgFillColor(ctx,nvgRGBA(255,240,180,math.floor(180*fade))); nvgFill(ctx)
             end
+            -- All spokes share a style: submit one path instead of 4-8 separate strokes.
+            nvgBeginPath(ctx)
             for i=1,(e.kind=="burst" and 8 or 4) do
                 local a=i*2.399+e.x*0.01
                 local inner=r*(0.1+progress*0.5)
                 local outer=inner+r*0.38*fade
-                line(ctx,x+math.cos(a)*inner,y+math.sin(a)*inner,
-                    x+math.cos(a)*outer,y+math.sin(a)*outer,(e.kind=="burst" and 3 or 2)*scale,e.c,245*fade)
+                local cos,sin=math.cos(a),math.sin(a)
+                nvgMoveTo(ctx,x+cos*inner,y+sin*inner)
+                nvgLineTo(ctx,x+cos*outer,y+sin*outer)
             end
+            nvgStrokeColor(ctx,nvgRGBA(e.c[1],e.c[2],e.c[3],math.floor(245*fade)))
+            nvgStrokeWidth(ctx,(e.kind=="burst" and 3 or 2)*scale)
+            nvgStroke(ctx)
         end
     end
 end

@@ -61,6 +61,8 @@ LoadImages()
 RebuildLayout(width, height)
 if page=="battle" then
     ResetGame("playing"); RebuildLayout(width,height)
+    QueueBattleResources()
+    for _=1,100 do ProcessBattleResources() end
     local g
     for i=1,80 do local n,v=debug.getupvalue(DrawHome,i); if n=="game" then g=v; break end end
     math.randomseed(27)

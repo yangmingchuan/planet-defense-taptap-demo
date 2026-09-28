@@ -1,4 +1,4 @@
-local Audio = { muted = false, sources = {}, sounds = {}, gates = {}, clock = 0, enabled = false }
+local Audio = { muted = false, sources = {}, sounds = {}, gates = {}, attempted = {}, clock = 0, enabled = false }
 local paths = {
     shot = "audio/sfx/pulse-shot-v1.mp3",
     hit = "audio/sfx/shell-impact-v1.mp3",
@@ -8,17 +8,20 @@ local paths = {
 }
 
 function Audio.Init()
-    if not Scene or not cache then return end
+    if Audio.enabled or not Scene or not cache then return end
     -- Hold the scene strongly for the lifetime of its pooled SoundSources.
     Audio.scene = Scene()
-    for name,path in pairs(paths) do
-        Audio.sounds[name] = cache:GetResource("Sound",path)
-        if not Audio.sounds[name] then print("WARN: missing battle sound: "..path) end
-    end
     for i=1,6 do Audio.sources[i]=Audio.scene:CreateChild("BattleSfx"..i):CreateComponent("SoundSource") end
     Audio.music=Audio.scene:CreateChild("BattleMusic"):CreateComponent("SoundSource")
-    if Audio.sounds.music then Audio.sounds.music:SetLooped(true) end
     Audio.enabled=true
+end
+
+function Audio.Prepare(name)
+    if not Audio.enabled or Audio.attempted[name] or not paths[name] then return end
+    Audio.attempted[name] = true
+    Audio.sounds[name] = cache:GetResource("Sound",paths[name])
+    if not Audio.sounds[name] then print("WARN: missing battle sound: "..paths[name]); return end
+    if name=="music" then Audio.sounds[name]:SetLooped(true) end
 end
 
 function Audio.Update(dt,playing)
@@ -57,6 +60,7 @@ end
 function Audio.Shutdown()
     Audio.Stop()
     Audio.sources,Audio.sounds,Audio.scene,Audio.music,Audio.enabled={},{},nil,nil,false
+    Audio.attempted,Audio.gates,Audio.unlocked={}, {}, false
 end
 
 return Audio

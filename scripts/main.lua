@@ -1,6 +1,5 @@
 require "LuaScripts/Utilities/Sample"
 
-local UI = require("urhox-libs/UI")
 local Roster = require("Roster")
 local CombatFX = require("CombatFX")
 local BattleAudio = require("BattleAudio")
@@ -17,6 +16,11 @@ local nvgContext = nil
 local fontId = -1
 local images = {}
 local imageMeta = {}
+local imagePaths = {}
+local loadQueue, loadCursor = {}, 1
+local focused = true
+local layoutAge = 1
+local appliedFps = nil
 
 local game = nil
 local layout = nil
@@ -151,6 +155,8 @@ local slotDefs = {
 
 function Start()
     math.randomseed(os.time())
+    focused = true
+    appliedFps = nil
 
     local graphics = GetGraphics()
     graphics:SetMode(450, 800)
@@ -158,6 +164,11 @@ function Start()
 
     SampleStart()
     SampleInitMouseMode(MM_FREE)
+    ConfigureFrameRate(30)
+    if GetEngine then
+        GetEngine():SetMaxInactiveFps(10)
+        GetEngine():SetPauseMinimized(true)
+    end
 
     nvgContext = nvgCreate(1)
     if nvgContext == nil then
@@ -167,7 +178,6 @@ function Start()
 
     fontId = nvgCreateFont(nvgContext, "sans", "Fonts/MiSans-Regular.ttf")
     LoadImages()
-    BattleAudio.Init()
     ResetGame("home")
 
     SubscribeToEvent(nvgContext, "NanoVGRender", "HandleRender")
@@ -176,15 +186,17 @@ function Start()
     SubscribeToEvent("MouseButtonUp", "HandleMouseUp")
     SubscribeToEvent("MouseMove", "HandleMouseMove")
     SubscribeToEvent("KeyDown", "HandleKeyDown")
+    SubscribeToEvent("InputFocus", "HandleInputFocus")
 
     print("星球防线核心战斗页已启动")
 end
 
 function Stop()
+    if UnsubscribeFromAllEvents then UnsubscribeFromAllEvents() end
     BattleAudio.Shutdown()
-    UI.Shutdown()
     if nvgContext ~= nil then
-        for _, handle in pairs(images) do
+        for _, entry in pairs(imagePaths) do
+            local handle = entry.handle
             if handle ~= nil and handle ~= 0 then
                 nvgDeleteImage(nvgContext, handle)
             end
@@ -192,21 +204,29 @@ function Stop()
         nvgDelete(nvgContext)
         nvgContext = nil
     end
+    images, imageMeta, imagePaths, loadQueue = {}, {}, {}, {}
+    loadCursor, appliedFps = 1, nil
 end
 
 function LoadImage(id, path)
+    if images[id] then return end
+    local cached = imagePaths[path]
+    if cached then
+        images[id], imageMeta[id] = cached.handle, cached.meta
+        return
+    end
     local handle = nvgCreateImage(nvgContext, path, 0)
     if handle ~= nil and handle ~= 0 then
         images[id] = handle
         local w, h = nvgImageSize(nvgContext, handle)
         imageMeta[id] = { w = w or 1, h = h or 1 }
+        imagePaths[path] = {handle=handle,meta=imageMeta[id]}
     else
         print("WARN: image load failed: " .. path)
     end
 end
 
 function LoadImages()
-    LoadImage("background", "assets/image/scene/battle-background-v6.png")
     LoadImage("home_background", "assets/image/home/home-background-v2.png")
     LoadImage("commander", "assets/image/home/commander-v1.png")
     for id in pairs(Roster.extra) do
@@ -226,30 +246,77 @@ function LoadImages()
     for id, folder in pairs(map) do
         for level = 1, 3 do
             LoadImage(id .. level, "assets/image/defenders/" .. folder .. "/level-" .. level .. ".png")
-            for frame = 1, DEFENDER_ATTACK_FRAMES do
-                local key = id .. "_attack_" .. level .. "_" .. frame
-                local path = string.format("assets/image/defenders/%s/attack/level-%d-%02d.png", folder, level, frame)
-                LoadImage(key, path)
+        end
+    end
+end
+
+function QueueBattleResources()
+    loadQueue, loadCursor = {}, 1
+    local function enqueue(id,path)
+        if not images[id] then loadQueue[#loadQueue+1]={id=id,path=path} end
+    end
+    enqueue("background", "assets/image/scene/battle-background-v6.png")
+    -- Mage uses a stable sprite; level II pairs reuse level I attack frames.
+    for _,id in ipairs(game.squad) do
+        if id=="archer" or id=="healer" then
+            for _,level in ipairs({1,3}) do
+                for frame=1,DEFENDER_ATTACK_FRAMES do
+                    enqueue(id.."_attack_"..level.."_"..frame,
+                        string.format("assets/image/defenders/%s/attack/level-%d-%02d.png",id,level,frame))
+                end
             end
         end
     end
-
     for _, id in ipairs({ "basic", "agile", "tank", "armored" }) do
-        LoadImage("monster_" .. id, "assets/image/monsters/" .. id .. "/portrait-v1.png")
+        enqueue("monster_" .. id, "assets/image/monsters/" .. id .. "/portrait-v1.png")
         for frame = 1, MONSTER_ANIMATION_FRAMES do
-            LoadImage("monster_" .. id .. "_walk_" .. frame, string.format("assets/image/monsters/%s/walk/%02d.png", id, frame))
-            LoadImage("monster_" .. id .. "_attack_" .. frame, string.format("assets/image/monsters/%s/attack/%02d.png", id, frame))
+            enqueue("monster_" .. id .. "_walk_" .. frame, string.format("assets/image/monsters/%s/walk/%02d.png", id, frame))
+            enqueue("monster_" .. id .. "_attack_" .. frame, string.format("assets/image/monsters/%s/attack/%02d.png", id, frame))
         end
     end
-    -- Boss art is not generated yet; use the heavy monster portrait instead of a red fallback circle.
-    LoadImage("monster_boss", "assets/image/monsters/tank/portrait-v1.png")
+    enqueue("monster_boss", "assets/image/monsters/tank/portrait-v1.png")
+    for _,name in ipairs({"shot","hit","frost","ultimate","music"}) do
+        if not BattleAudio.attempted[name] then loadQueue[#loadQueue+1]={sound=name} end
+    end
+    game.loadingBattle = #loadQueue>0
+end
+
+function ProcessBattleResources()
+    -- Bound uploads per update; do not decode every animation in the Start callback.
+    for _=1,2 do
+        local job=loadQueue[loadCursor]
+        if not job then break end
+        if job.sound then BattleAudio.Init(); BattleAudio.Prepare(job.sound)
+        else LoadImage(job.id,job.path) end
+        loadCursor=loadCursor+1
+    end
+    if loadCursor>#loadQueue then
+        game.loadingBattle=false
+        loadQueue,loadCursor={},1
+    end
+end
+
+function ConfigureFrameRate(fps)
+    if appliedFps==fps then return end
+    if GetEngine then GetEngine():SetMaxFps(fps) end
+    appliedFps=fps
+end
+
+function HandleInputFocus(_,eventData)
+    focused=eventData:GetBool("Focus") and not eventData:GetBool("Minimized")
+    if not focused then BattleAudio.Stop(); drag=nil end
+    layoutAge=1
+    ConfigureFrameRate(focused and (game and game.state=="playing" and 60 or 30) or 10)
 end
 
 function ResetGame(initialState)
     BattleAudio.Stop()
     drag = nil
+    loadQueue,loadCursor={},1
+    layoutAge=1
     game = {
         state = initialState or "home",
+        loadingBattle = false,
         homeTab = "home",
         homeGuard = 1,
         homeLevel = 3,
@@ -304,6 +371,7 @@ function StartBattle()
         return
     end
     ResetGame("playing")
+    if nvgContext then QueueBattleResources() end
 end
 
 function ToggleSquad(kind)
@@ -322,6 +390,10 @@ end
 
 function HandleUpdate(eventType, eventData)
     local dt = eventData:GetFloat("TimeStep")
+    ConfigureFrameRate(focused and (game.state=="playing" and not game.loadingBattle and 60 or 30) or 10)
+    if not focused then return end
+    layoutAge=layoutAge+dt
+    if game.loadingBattle then ProcessBattleResources(); return end
     if dt > 0.05 then dt = 0.05 end
     game.time = game.time + dt
     toast.time = math.max(0, toast.time - dt)
@@ -1183,6 +1255,7 @@ end
 function HandleMouseDown(eventType, eventData)
     local button = eventData:GetInt("Button")
     if button ~= MOUSEB_LEFT then return end
+    if game.loadingBattle then return end
     BattleAudio.Unlock()
 
     local sx, sy = eventData:GetInt("X"), eventData:GetInt("Y")
@@ -1456,9 +1529,9 @@ function GetHomeSafeInsets(height)
     return insets
 end
 
-function RebuildLayout(width, height)
+function RebuildLayout(width, height, safeOverride)
     local isHome = game and game.state == "home"
-    local safe = isHome and GetHomeSafeInsets(height) or { left = 0, top = 0, right = 0, bottom = 0 }
+    local safe = safeOverride or (isHome and GetHomeSafeInsets(height) or { left = 0, top = 0, right = 0, bottom = 0 })
     local availableW = math.max(1, width - safe.left - safe.right)
     local availableH = math.max(1, height - safe.top - safe.bottom)
     local scale = math.min(availableW / DESIGN_W, availableH / DESIGN_H)
@@ -1478,6 +1551,9 @@ function RebuildLayout(width, height)
         drawH = drawH,
         safeTop = safe.top,
         safeBottom = safe.bottom,
+        safeLeft = safe.left,
+        safeRight = safe.right,
+        homeMode = isHome,
         audioButton = {x=20,y=300,w=90,h=90},
         bookButton = { x = 18, y = 1455, w = 245, h = 185 },
         lordButton = { x = 340, y = 1450, w = 260, h = 190 },
@@ -1504,6 +1580,20 @@ function RebuildLayout(width, height)
     for i = 1, #Roster.order do
         layout.homeGuardChoices[i] = { x = 66 + ((i - 1) % 3) * 278,
             y = homeBottom - 782 + math.floor((i - 1) / 3) * 148, w = 254, h = 134 }
+    end
+    layoutAge=0
+end
+
+function EnsureLayout(width,height)
+    local isHome=game and game.state=="home"
+    if not layout or layout.viewportWidth~=width or layout.viewportHeight~=height or layout.homeMode~=isHome then
+        RebuildLayout(width,height)
+    elseif isHome and layoutAge>=0.5 then
+        local safe=GetHomeSafeInsets(height)
+        layoutAge=0
+        if safe.top~=layout.safeTop or safe.bottom~=layout.safeBottom or safe.left~=layout.safeLeft or safe.right~=layout.safeRight then
+            RebuildLayout(width,height,safe)
+        end
     end
 end
 
@@ -1551,7 +1641,7 @@ function HandleRender(eventType, eventData)
     local graphics = GetGraphics()
     local width = graphics:GetWidth()
     local height = graphics:GetHeight()
-    RebuildLayout(width, height)
+    EnsureLayout(width, height)
 
     nvgBeginFrame(nvgContext, width, height, 1.0)
     DrawScene(nvgContext, width, height)
@@ -1560,6 +1650,12 @@ end
 
 function DrawScene(ctx, width, height)
     DrawBackground(ctx, width, height)
+    if game.loadingBattle then
+        local ratio=(loadCursor-1)/math.max(1,#loadQueue)
+        DrawText(ctx,"正在准备战场",471,730,32,{235,245,250},NVG_ALIGN_CENTER+NVG_ALIGN_MIDDLE)
+        DrawBar(ctx,271,790,400,20,ratio,{90,210,215},math.floor(ratio*100).."%")
+        return
+    end
     if game.state == "home" then
         DrawHome(ctx)
         DrawToast(ctx)
@@ -1585,9 +1681,9 @@ function DrawBackground(ctx, width, height)
     nvgFillColor(ctx, nvgRGBA(10, 15, 25, 255))
     nvgFill(ctx)
 
-    local img = game.state == "home" and images.home_background or images.background
+    local img = (game.state == "home" or game.loadingBattle) and images.home_background or images.background
     if img ~= nil then
-        if game.state == "home" then
+        if game.state == "home" or game.loadingBattle then
             local meta = imageMeta.home_background
             local cover = math.max(width / meta.w, height / meta.h)
             local w, h = meta.w * cover, meta.h * cover
@@ -2093,6 +2189,7 @@ function DrawMonsters(ctx)
             DrawFrozenShell(ctx, sx, sy, m.radius)
         end
 
+        if m.hp<m.maxHp or m.id=="boss" then
         local hpRatio = math.max(0, m.hp / m.maxHp)
         nvgBeginPath(ctx)
         nvgRoundedRect(ctx, sx - 28 * layout.scale, sy - 48 * layout.scale, 56 * layout.scale, 6 * layout.scale, 3 * layout.scale)
@@ -2102,6 +2199,7 @@ function DrawMonsters(ctx)
         nvgRoundedRect(ctx, sx - 28 * layout.scale, sy - 48 * layout.scale, 56 * hpRatio * layout.scale, 6 * layout.scale, 3 * layout.scale)
         nvgFillColor(ctx, nvgRGBA(255, 90, 80, 230))
         nvgFill(ctx)
+        end
     end
 end
 
