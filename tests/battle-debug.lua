@@ -28,7 +28,7 @@ local audio={sources={}}
 local frames=0
 local function frame(interval)
     now=now+interval
-    local update=Debug.BeginUpdate(); now=now+2; Debug.EndUpdate(update)
+    local update=Debug.BeginUpdate((interval+5)/1000); now=now+2; Debug.EndUpdate(update)
     local render=Debug.BeginRender(); now=now+3
     Debug.EndRender(render,g,graphics,images,audio,60)
     frames=frames+1
@@ -44,7 +44,7 @@ assert(text:find("CPU/GPU占用 N/A",1,true))
 Debug.Reset(); now=now+10000
 frame(11); assert(Debug.stutters==0)
 for i=1,40 do
-    now=now+16; local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
+    now=now+16; Debug.BeginUpdate(0.016); local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
 end
 assert(table.concat(Debug.rows):find("引擎批次 N/A",1,true))
 click(); assert(not Debug.enabled and g.silver==silver)
@@ -56,7 +56,22 @@ end
 GetTime=nil
 Debug.Init(); Debug.clock=function() return now end; Debug.Toggle()
 for i=1,40 do
-    now=now+16; local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
+    now=now+16; Debug.BeginUpdate(0.016); local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
 end
-assert(table.concat(Debug.rows):find("FPS N/A",1,true),"CPU time is not a valid wall-clock FPS")
+assert(table.concat(Debug.rows):find("CPU clock ms",1,true),"time source must be identified")
+
+-- Maker's browser clock can stay constant while simulation and drawing continue.
+now=0
+GetTime=function() return {GetSystemTime=function() return 0 end} end
+Debug.Init(); Debug.Toggle()
+for i=1,40 do
+    local rawDt=i==5 and 0.2 or 0.016
+    HandleUpdate(nil,{GetFloat=function() return rawDt end})
+    local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
+end
+local stalled=table.concat(Debug.rows,"\n")
+assert(not stalled:find("采样中",1,true))
+assert(stalled:find("FPS",1,true) and stalled:find("P95",1,true))
+assert(stalled:find("逻辑 N/A",1,true) and stalled:find("绘制提交 N/A",1,true))
+assert(stalled:find(">50ms 1次",1,true))
 print("PASS debug toggle consumes input, disabled sampling idle, unclamped stalls, callback timing, missing counters, focus reset, viewport bounds")

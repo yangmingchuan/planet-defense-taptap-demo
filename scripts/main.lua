@@ -396,7 +396,7 @@ function HandleUpdate(eventType, eventData)
     local dt = eventData:GetFloat("TimeStep")
     ConfigureFrameRate(focused and (game.state=="playing" and not game.loadingBattle and 60 or 30) or 10)
     if not focused then return end
-    local debugStart=game.state~="home" and BattleDebug.BeginUpdate() or nil
+    local debugStart=game.state~="home" and BattleDebug.BeginUpdate(dt) or nil
     layoutAge=layoutAge+dt
     if game.loadingBattle then ProcessBattleResources(); BattleDebug.EndUpdate(debugStart); return end
     if dt > 0.05 then dt = 0.05 end
