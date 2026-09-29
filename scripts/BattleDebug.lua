@@ -14,6 +14,7 @@ end
 function Debug.Init()
     Debug.enabled=false
     Debug.clock=nil
+    Debug.cpuClock=type(os.clock)=="function" and function() return os.clock()*1000 end or nil
     Debug.hasWallClock=false
     if GetTime then
         local time=GetTime()
@@ -24,8 +25,8 @@ function Debug.Init()
         end
     end
     if not Debug.clock then
-        Debug.clock=function() return os.clock()*1000 end
-        Debug.clockLabel="CPU clock ms"
+        Debug.clock=Debug.cpuClock or function() return 0 end
+        Debug.clockLabel=Debug.cpuClock and "CPU clock ms" or "N/A"
     end
     Debug.Reset()
 end
@@ -36,6 +37,8 @@ function Debug.Reset()
     Debug.updateElapsed,Debug.pendingFrameMs,Debug.clockUnreliable=0,0,false
     Debug.updateIntervals,Debug.updateWorst,Debug.updateStutters={},0,0
     Debug.updateSum,Debug.updates,Debug.renderSum,Debug.renders=0,0,0,0
+    Debug.cpuUpdateSum,Debug.cpuRenderSum,Debug.cpuUpdates,Debug.cpuRenders=0,0,0,0
+    Debug.simulations=0
 end
 
 function Debug.Toggle()
@@ -54,6 +57,7 @@ function Debug.BeginUpdate(rawDt)
             Debug.updateWorst=math.max(Debug.updateWorst,ms)
             if ms>50 then Debug.updateStutters=Debug.updateStutters+1 end
         end
+        Debug.cpuUpdateStart=Debug.cpuClock and Debug.cpuClock() or nil
         return Debug.clock()
     end
 end
@@ -62,6 +66,15 @@ function Debug.EndUpdate(start)
     if not start then return end
     Debug.updateSum=Debug.updateSum+math.max(0,Debug.clock()-start)
     Debug.updates=Debug.updates+1
+    local cpuDelta=Debug.cpuUpdateStart and Debug.cpuClock()-Debug.cpuUpdateStart or 0
+    if cpuDelta>0 then
+        Debug.cpuUpdateSum=Debug.cpuUpdateSum+cpuDelta
+        Debug.cpuUpdates=Debug.cpuUpdates+1
+    end
+end
+
+function Debug.MarkSimulation()
+    if Debug.enabled then Debug.simulations=Debug.simulations+1 end
 end
 
 function Debug.BeginRender()
@@ -75,13 +88,19 @@ function Debug.BeginRender()
     end
     Debug.lastRender=now
     Debug.pendingFrameMs=0
+    Debug.cpuRenderStart=Debug.cpuClock and Debug.cpuClock() or nil
     return now
 end
 
-function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
+function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap,cached)
     if not start then return end
     Debug.renderSum=Debug.renderSum+math.max(0,Debug.clock()-start)
     Debug.renders=Debug.renders+1
+    local cpuDelta=Debug.cpuRenderStart and Debug.cpuClock()-Debug.cpuRenderStart or 0
+    if cpuDelta>0 then
+        Debug.cpuRenderSum=Debug.cpuRenderSum+cpuDelta
+        Debug.cpuRenders=Debug.cpuRenders+1
+    end
     if Debug.updateElapsed<500 or Debug.renders==0 then return end
     table.sort(Debug.updateIntervals)
     local guards,textures,bytes,voices=0,0,0,0
@@ -97,12 +116,19 @@ function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
     local ok,memory=pcall(collectgarbage,"count")
     local p95=Debug.updateIntervals[math.max(1,math.ceil(#Debug.updateIntervals*0.95))]
     local fx=#game.combatFx.items+#game.particles+#game.iceBlasts
+    local logic=not Debug.clockUnreliable and Debug.updates>0 and Debug.updateSum/Debug.updates
+        or (Debug.cpuUpdates>0 and Debug.cpuUpdateSum/Debug.cpuUpdates or nil)
+    local paint=not Debug.clockUnreliable and Debug.renderSum/Debug.renders
+        or (Debug.cpuRenders>0 and Debug.cpuRenderSum/Debug.cpuRenders or nil)
+    local source=Debug.clockUnreliable and "CPU钟" or ""
     Debug.rows={
-        "更新/s "..number(Debug.updates*1000/Debug.updateElapsed,"%.0f").."  绘制/s "..number(Debug.renders*1000/Debug.updateElapsed,"%.0f"),
-        "目标 "..number(fpsCap).."  更新P95 "..number(p95,"%.1f").."ms",
+        "更新 "..number(Debug.updates*1000/Debug.updateElapsed,"%.0f").."/s  模拟 "..number(Debug.simulations*1000/Debug.updateElapsed,"%.0f").."/s",
+        "实际重绘 "..number(Debug.renders*1000/Debug.updateElapsed,"%.0f").."/s  目标 "..number(fpsCap),
+        "帧缓存 "..(cached and "ON" or "OFF"),
+        "更新P95 "..number(p95,"%.1f").."ms",
         "最慢更新 "..number(Debug.updateWorst,"%.0f").."ms  >50ms "..Debug.updateStutters.."次",
-        "逻辑 "..number(not Debug.clockUnreliable and Debug.updates>0 and Debug.updateSum/Debug.updates or nil,"%.1f").." ms",
-        "绘制提交 "..number(not Debug.clockUnreliable and Debug.renderSum/Debug.renders or nil,"%.1f").." ms",
+        "逻辑"..source.." "..number(logic,"%.1f").." ms",
+        "绘制"..source.." "..number(paint,"%.1f").." ms",
         "怪物 "..#game.monsters.."  守卫 "..guards.."  弹道 "..#game.projectiles,
         "特效 "..fx.."  飘字 "..#game.floats.."  音效 "..voices,
         "Lua内存 "..number(ok and memory/1024 or nil,"%.2f").." MiB",
@@ -114,6 +140,8 @@ function Debug.EndRender(start,game,graphics,imagePaths,audio,fpsCap)
     Debug.updateElapsed,Debug.clockUnreliable=0,false
     Debug.updateIntervals={}
     Debug.updateSum,Debug.updates,Debug.renderSum,Debug.renders=0,0,0,0
+    Debug.cpuUpdateSum,Debug.cpuRenderSum,Debug.cpuUpdates,Debug.cpuRenders=0,0,0,0
+    Debug.simulations=0
 end
 
 function Debug.Bounds(width,height,safe)

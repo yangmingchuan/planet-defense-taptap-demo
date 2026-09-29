@@ -38,7 +38,7 @@ frame(195) -- 200ms frame interval must not be truncated by the simulation's 50m
 for i=1,20 do frame(11) end
 local text=table.concat(Debug.rows,"\n")
 assert(text:find("最慢更新 200ms",1,true) and text:find(">50ms 1次",1,true))
-assert(text:find("逻辑 2.0 ms",1,true) and text:find("绘制提交 3.0 ms",1,true))
+assert(text:find("逻辑 2.0 ms",1,true) and text:find("绘制 3.0 ms",1,true))
 assert(text:find("RGBA估算 1.0 MiB",1,true) and text:find("引擎批次 72",1,true))
 assert(text:find("实际FPS/CPU/GPU N/A",1,true))
 Debug.Reset(); now=now+10000
@@ -58,12 +58,13 @@ Debug.Init(); Debug.clock=function() return now end; Debug.Toggle()
 for i=1,40 do
     now=now+16; Debug.BeginUpdate(0.016); local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,60)
 end
-assert(table.concat(Debug.rows):find("更新/s",1,true),"callback rates must remain visible")
+assert(table.concat(Debug.rows):find("实际重绘",1,true),"draw rate must remain visible")
 
 -- Maker's browser clock can stay constant while simulation and drawing continue.
 now=0
 GetTime=function() return {GetSystemTime=function() return 0 end} end
 Debug.Init(); Debug.Toggle()
+Debug.cpuClock=function() return 0 end
 for i=1,40 do
     local rawDt=i==5 and 0.2 or 0.016
     HandleUpdate(nil,{GetFloat=function() return rawDt end})
@@ -71,17 +72,38 @@ for i=1,40 do
 end
 local stalled=table.concat(Debug.rows,"\n")
 assert(not stalled:find("采样中",1,true))
-assert(stalled:find("更新/s",1,true) and stalled:find("更新P95",1,true))
-assert(stalled:find("逻辑 N/A",1,true) and stalled:find("绘制提交 N/A",1,true))
+assert(stalled:find("实际重绘",1,true) and stalled:find("更新P95",1,true))
+assert(stalled:find("逻辑CPU钟 N/A",1,true) and stalled:find("绘制CPU钟 N/A",1,true))
 assert(stalled:find(">50ms 1次",1,true))
 Debug.Reset()
+local cpuTick=0
+Debug.cpuClock=function() cpuTick=cpuTick+2; return cpuTick end
 for i=1,40 do
-    Debug.BeginUpdate(0.016)
+    local update=Debug.BeginUpdate(0.016); Debug.MarkSimulation(); Debug.EndUpdate(update)
+    local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,30)
+end
+local cpuRows=table.concat(Debug.rows,"\n")
+assert(cpuRows:find("逻辑CPU钟 2.0 ms",1,true) and cpuRows:find("绘制CPU钟 2.0 ms",1,true))
+assert(cpuRows:find("帧缓存 OFF",1,true))
+Debug.Reset()
+for i=1,40 do
+    local update=Debug.BeginUpdate(0.016); Debug.MarkSimulation(); Debug.EndUpdate(update)
     for _=1,2 do
         local start=Debug.BeginRender(); Debug.EndRender(start,g,{},images,audio,30)
     end
 end
-local updates,renders=Debug.rows[1]:match("更新/s (%d+)  绘制/s (%d+)")
+local updates=Debug.rows[1]:match("更新 (%d+)/s")
+local renders=Debug.rows[2]:match("实际重绘 (%d+)/s")
 assert(updates and tonumber(renders)>tonumber(updates),"render callbacks must not be labeled FPS")
 assert(Debug.rows[#Debug.rows]=="实际FPS/CPU/GPU N/A")
+local clock=os.clock
+os.clock=nil
+GetTime=nil
+Debug.Init(); Debug.Toggle()
+for i=1,40 do
+    local update=Debug.BeginUpdate(0.016); Debug.MarkSimulation(); Debug.EndUpdate(update)
+    local render=Debug.BeginRender(); Debug.EndRender(render,g,{},images,audio,30)
+end
+assert(not table.concat(Debug.rows):find("采样中",1,true),"missing clocks must not stop sampling")
+os.clock=clock
 print("PASS debug toggle consumes input, disabled sampling idle, unclamped stalls, callback timing, missing counters, focus reset, viewport bounds")

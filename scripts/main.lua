@@ -11,10 +11,23 @@ local DESIGN_W = 942
 local DESIGN_H = 1670
 local MAX_WAVES = 10
 local MONSTER_ANIMATION_FRAMES = 6
+local MONSTER_ATLAS_COLUMNS = 8
+local MONSTER_ATLAS_ROWS = 6
+local MONSTER_ATLAS_INDEX = {basic=0,agile=1,tank=2,armored=3}
 local DEFENDER_ATTACK_FRAMES = 6
+local PROJECTILE_STYLES = {
+    {"star_arrow",74,15,{255,185,55,120},10,{255,250,205,255}},
+    {"arrow",24,3,{255,225,105,245},4.5,{255,245,175,255}},
+    {"frost",30,7,{80,205,255,165},8,{175,245,255,245}},
+    {"other",22,6,{145,255,115,145},7,{225,255,145,245}},
+}
 local BATTLE_FPS_CAP = 30
+local RENDER_STEP = 1 / BATTLE_FPS_CAP
+local SIMULATION_STEP = 1 / 60
 
 local nvgContext = nil
+local frameCache = nil
+local simulationPending = 0
 local fontId = -1
 local images = {}
 local imageMeta = {}
@@ -182,8 +195,10 @@ function Start()
     fontId = nvgCreateFont(nvgContext, "sans", "Fonts/MiSans-Regular.ttf")
     LoadImages()
     ResetGame("home")
+    InitFrameCache(graphics)
 
-    SubscribeToEvent(nvgContext, "NanoVGRender", "HandleRender")
+    if frameCache then SubscribeToEvent("EndAllViewsRender", "HandleRender")
+    else SubscribeToEvent(nvgContext, "NanoVGRender", "HandleRender") end
     SubscribeToEvent("Update", "HandleUpdate")
     SubscribeToEvent("MouseButtonDown", "HandleMouseDown")
     SubscribeToEvent("MouseButtonUp", "HandleMouseUp")
@@ -197,6 +212,10 @@ end
 function Stop()
     if UnsubscribeFromAllEvents then UnsubscribeFromAllEvents() end
     BattleAudio.Shutdown()
+    if frameCache then
+        frameCache.panel:Remove()
+        frameCache=nil
+    end
     if nvgContext ~= nil then
         for _, entry in pairs(imagePaths) do
             local handle = entry.handle
@@ -270,12 +289,9 @@ function QueueBattleResources()
             end
         end
     end
+    enqueue("monster_animation_atlas", "assets/image/monsters/battle-animation-atlas-v1.png")
     for _, id in ipairs({ "basic", "agile", "tank", "armored" }) do
         enqueue("monster_" .. id, "assets/image/monsters/" .. id .. "/portrait-v1.png")
-        for frame = 1, MONSTER_ANIMATION_FRAMES do
-            enqueue("monster_" .. id .. "_walk_" .. frame, string.format("assets/image/monsters/%s/walk/%02d.png", id, frame))
-            enqueue("monster_" .. id .. "_attack_" .. frame, string.format("assets/image/monsters/%s/attack/%02d.png", id, frame))
-        end
     end
     enqueue("monster_boss", "assets/image/monsters/tank/portrait-v1.png")
     for _,name in ipairs({"shot","hit","frost","ultimate","music"}) do
@@ -305,10 +321,45 @@ function ConfigureFrameRate(fps)
     appliedFps=fps
 end
 
+function InitFrameCache(graphics)
+    if not (ui and ui.root and Texture2D and BorderImage and nvgSetRenderTarget and TEXTURE_RENDERTARGET) then return end
+    local width,height=graphics:GetWidth(),graphics:GetHeight()
+    local ok,result=pcall(function()
+        local target=Texture2D:new()
+        target:SetNumLevels(1)
+        assert(target:SetSize(width,height,graphics:GetRGBAFormat(),TEXTURE_RENDERTARGET))
+        target:SetFilterMode(FILTER_BILINEAR)
+        local panel=BorderImage:new()
+        panel:SetTexture(target)
+        panel:SetPosition(0,0)
+        panel:SetSize(width,height)
+        ui.root:AddChild(panel)
+        local bound,bindingError=pcall(nvgSetRenderTarget,nvgContext,target)
+        if not bound then
+            panel:Remove()
+            error(bindingError)
+        end
+        return {target=target,panel=panel,width=width,height=height,pending=0,dirty=true}
+    end)
+    if ok then frameCache=result
+    else print("WARN: frame cache unavailable: "..tostring(result)) end
+end
+
+function ResizeFrameCache(graphics,width,height)
+    if not frameCache or (frameCache.width==width and frameCache.height==height) then return end
+    if frameCache.target:SetSize(width,height,graphics:GetRGBAFormat(),TEXTURE_RENDERTARGET) then
+        frameCache.panel:SetSize(width,height)
+        frameCache.width,frameCache.height=width,height
+        frameCache.dirty=true
+    end
+end
+
 function HandleInputFocus(_,eventData)
     focused=eventData:GetBool("Focus") and not eventData:GetBool("Minimized")
     if not focused then BattleAudio.Stop(); drag=nil end
     layoutAge=1
+    simulationPending=0
+    if frameCache then frameCache.dirty=true end
     BattleDebug.Reset()
     ConfigureFrameRate(focused and BATTLE_FPS_CAP or 10)
 end
@@ -319,6 +370,8 @@ function ResetGame(initialState)
     drag = nil
     loadQueue,loadCursor={},1
     layoutAge=1
+    simulationPending=0
+    if frameCache then frameCache.dirty=true end
     game = {
         state = initialState or "home",
         loadingBattle = false,
@@ -399,8 +452,19 @@ function HandleUpdate(eventType, eventData)
     if not focused then return end
     local debugStart=game.state~="home" and BattleDebug.BeginUpdate(dt) or nil
     layoutAge=layoutAge+dt
+    if frameCache and dt>0 then
+        frameCache.pending=frameCache.pending+dt
+        if frameCache.pending>=RENDER_STEP then
+            frameCache.pending=frameCache.pending%RENDER_STEP
+            frameCache.dirty=true
+        end
+    end
     if game.loadingBattle then ProcessBattleResources(); BattleDebug.EndUpdate(debugStart); return end
-    if dt > 0.05 then dt = 0.05 end
+    simulationPending=simulationPending+math.max(0,dt)
+    if simulationPending<SIMULATION_STEP then BattleDebug.EndUpdate(debugStart); return end
+    dt=math.min(simulationPending,0.05)
+    simulationPending=0
+    BattleDebug.MarkSimulation()
     game.time = game.time + dt
     toast.time = math.max(0, toast.time - dt)
     BattleAudio.Update(dt,game.state == "playing")
@@ -1659,13 +1723,16 @@ function HandleRender(eventType, eventData)
     local graphics = GetGraphics()
     local width = graphics:GetWidth()
     local height = graphics:GetHeight()
+    ResizeFrameCache(graphics,width,height)
+    if frameCache and not frameCache.dirty then return end
+    if frameCache then frameCache.dirty=false end
     EnsureLayout(width, height)
     local debugStart=focused and game.state~="home" and BattleDebug.BeginRender() or nil
 
     nvgBeginFrame(nvgContext, width, height, 1.0)
     DrawScene(nvgContext, width, height)
     nvgEndFrame(nvgContext)
-    BattleDebug.EndRender(debugStart,game,graphics,imagePaths,BattleAudio,appliedFps)
+    BattleDebug.EndRender(debugStart,game,graphics,imagePaths,BattleAudio,appliedFps,frameCache~=nil)
 end
 
 function DrawScene(ctx, width, height)
@@ -2179,6 +2246,7 @@ function DrawMonsters(ctx)
         local sx, sy = ToScreen(m.x, m.y)
         local size = m.radius * 2.3 * layout.scale
         local img = images["monster_" .. m.id]
+        local atlasSlot
         if m.id ~= "boss" then
             local frame = 1
             if m.animState == "attack" then
@@ -2188,15 +2256,27 @@ function DrawMonsters(ctx)
             else
                 frame = math.floor(m.animTime / monsterTypes[m.id].walkFrameTime) % MONSTER_ANIMATION_FRAMES + 1
             end
-            img = images["monster_" .. m.id .. "_" .. m.animState .. "_" .. frame] or img
+            if images.monster_animation_atlas then
+                img=images.monster_animation_atlas
+                atlasSlot=MONSTER_ATLAS_INDEX[m.id]*MONSTER_ANIMATION_FRAMES*2
+                    +(m.animState=="attack" and MONSTER_ANIMATION_FRAMES or 0)+frame-1
+            end
         end
         if img ~= nil then
+            local left,top=sx-size*0.5,sy-size*0.75
+            local patternX,patternY,patternW,patternH=left,top,size,size
+            if atlasSlot then
+                patternX=left-(atlasSlot%MONSTER_ATLAS_COLUMNS)*size
+                patternY=top-math.floor(atlasSlot/MONSTER_ATLAS_COLUMNS)*size
+                patternW=MONSTER_ATLAS_COLUMNS*size
+                patternH=MONSTER_ATLAS_ROWS*size
+            end
             nvgBeginPath(ctx)
-            nvgRect(ctx, sx - size * 0.5, sy - size * 0.75, size, size)
+            nvgRect(ctx, left, top, size, size)
             if (m.hitFlash or 0)>0 and nvgImagePatternTinted then
-                nvgFillPaint(ctx,nvgImagePatternTinted(ctx,sx-size*0.5,sy-size*0.75,size,size,0,img,nvgRGBA(255,165,120,255)))
+                nvgFillPaint(ctx,nvgImagePatternTinted(ctx,patternX,patternY,patternW,patternH,0,img,nvgRGBA(255,165,120,255)))
             else
-                nvgFillPaint(ctx, nvgImagePattern(ctx, sx - size * 0.5, sy - size * 0.75, size, size, 0, img, 1))
+                nvgFillPaint(ctx,nvgImagePattern(ctx,patternX,patternY,patternW,patternH,0,img,1))
             end
             nvgFill(ctx)
         else
@@ -2210,18 +2290,29 @@ function DrawMonsters(ctx)
         if m.freezeTime > 0 then
             DrawFrozenShell(ctx, sx, sy, m.radius)
         end
-
+    end
+    local hasBars=false
+    nvgBeginPath(ctx)
+    for _,m in ipairs(game.monsters) do
         if m.hp<m.maxHp or m.id=="boss" then
-        local hpRatio = math.max(0, m.hp / m.maxHp)
-        nvgBeginPath(ctx)
-        nvgRoundedRect(ctx, sx - 28 * layout.scale, sy - 48 * layout.scale, 56 * layout.scale, 6 * layout.scale, 3 * layout.scale)
-        nvgFillColor(ctx, nvgRGBA(20, 20, 25, 180))
-        nvgFill(ctx)
-        nvgBeginPath(ctx)
-        nvgRoundedRect(ctx, sx - 28 * layout.scale, sy - 48 * layout.scale, 56 * hpRatio * layout.scale, 6 * layout.scale, 3 * layout.scale)
-        nvgFillColor(ctx, nvgRGBA(255, 90, 80, 230))
-        nvgFill(ctx)
+            local sx,sy=ToScreen(m.x,m.y)
+            nvgRoundedRect(ctx,sx-28*layout.scale,sy-48*layout.scale,56*layout.scale,6*layout.scale,3*layout.scale)
+            hasBars=true
         end
+    end
+    if hasBars then
+        nvgFillColor(ctx,nvgRGBA(20,20,25,180))
+        nvgFill(ctx)
+        nvgBeginPath(ctx)
+        for _,m in ipairs(game.monsters) do
+            if m.hp<m.maxHp or m.id=="boss" then
+                local sx,sy=ToScreen(m.x,m.y)
+                local hpRatio=math.max(0,m.hp/m.maxHp)
+                nvgRoundedRect(ctx,sx-28*layout.scale,sy-48*layout.scale,56*hpRatio*layout.scale,6*layout.scale,3*layout.scale)
+            end
+        end
+        nvgFillColor(ctx,nvgRGBA(255,90,80,230))
+        nvgFill(ctx)
     end
 end
 
@@ -2282,72 +2373,55 @@ function DrawProjectiles(ctx)
         nvgFillColor(ctx,nvgRGBA(194,238,83,28)); nvgFill(ctx)
         nvgStrokeColor(ctx,nvgRGBA(194,238,83,135)); nvgStrokeWidth(ctx,2*layout.scale); nvgStroke(ctx)
     end
+    local groups={star_arrow={},arrow={},frost={},other={}}
     for _, p in ipairs(game.projectiles) do
         if (p.delay or 0)<=0 then
-        local sx, sy = ToScreen(p.x, p.y)
-        local psx, psy = ToScreen(p.prevX, p.prevY)
-        local dx, dy = sx - psx, sy - psy
-        local length = math.max(0.001, math.sqrt(dx * dx + dy * dy))
-        local ux, uy = dx / length, dy / length
-
         if p.extra then
+            local sx,sy=ToScreen(p.x,p.y)
             DrawExtraProjectile(ctx,p,sx,sy)
-        elseif p.kind == "star_arrow" then
-            nvgBeginPath(ctx)
-            nvgMoveTo(ctx, sx - ux * 74 * layout.scale, sy - uy * 74 * layout.scale)
-            nvgLineTo(ctx, sx, sy)
-            nvgStrokeColor(ctx, nvgRGBA(255, 185, 55, 120))
-            nvgStrokeWidth(ctx, 15 * layout.scale)
-            nvgStroke(ctx)
-            nvgBeginPath(ctx)
-            nvgMoveTo(ctx, sx - ux * 62 * layout.scale, sy - uy * 62 * layout.scale)
-            nvgLineTo(ctx, sx, sy)
-            nvgStrokeColor(ctx, nvgRGBA(255, 240, 160, 255))
-            nvgStrokeWidth(ctx, 7 * layout.scale)
-            nvgStroke(ctx)
-            nvgBeginPath(ctx)
-            nvgCircle(ctx, sx, sy, 10 * layout.scale)
-            nvgFillColor(ctx, nvgRGBA(255, 250, 205, 255))
-            nvgFill(ctx)
-        elseif p.kind == "arrow" then
-            nvgBeginPath(ctx)
-            nvgMoveTo(ctx, sx - ux * 24 * layout.scale, sy - uy * 24 * layout.scale)
-            nvgLineTo(ctx, sx, sy)
-            nvgStrokeColor(ctx, nvgRGBA(255, 225, 105, 245))
-            nvgStrokeWidth(ctx, 3 * layout.scale)
-            nvgStroke(ctx)
-            nvgBeginPath(ctx)
-            nvgCircle(ctx, sx, sy, 4.5 * layout.scale)
-            nvgFillColor(ctx, nvgRGBA(255, 245, 175, 255))
-            nvgFill(ctx)
-        elseif p.kind == "frost" then
-            nvgBeginPath(ctx)
-            nvgMoveTo(ctx, sx - ux * 30 * layout.scale, sy - uy * 30 * layout.scale)
-            nvgLineTo(ctx, sx, sy)
-            nvgStrokeColor(ctx, nvgRGBA(80, 205, 255, 165))
-            nvgStrokeWidth(ctx, 7 * layout.scale)
-            nvgStroke(ctx)
-            nvgBeginPath(ctx)
-            nvgCircle(ctx, sx, sy, 8 * layout.scale)
-            nvgFillColor(ctx, nvgRGBA(175, 245, 255, 245))
-            nvgFill(ctx)
-            nvgStrokeColor(ctx, nvgRGBA(75, 165, 255, 255))
-            nvgStrokeWidth(ctx, 2 * layout.scale)
-            nvgStroke(ctx)
         else
-            nvgBeginPath(ctx)
-            nvgMoveTo(ctx, sx - ux * 22 * layout.scale, sy - uy * 22 * layout.scale)
-            nvgLineTo(ctx, sx, sy)
-            nvgStrokeColor(ctx, nvgRGBA(145, 255, 115, 145))
-            nvgStrokeWidth(ctx, 6 * layout.scale)
-            nvgStroke(ctx)
-            nvgBeginPath(ctx)
-            nvgCircle(ctx, sx, sy, 7 * layout.scale)
-            nvgFillColor(ctx, nvgRGBA(225, 255, 145, 245))
-            nvgFill(ctx)
+            local group=groups[p.kind] or groups.other
+            group[#group+1]=p
         end
         end
     end
+    for _,style in ipairs(PROJECTILE_STYLES) do
+        local group=groups[style[1]]
+        if #group>0 then
+            DrawProjectileTrails(ctx,group,style[2],style[3],style[4])
+            if style[1]=="star_arrow" then
+                DrawProjectileTrails(ctx,group,62,7,{255,240,160,255})
+            end
+            nvgBeginPath(ctx)
+            for _,p in ipairs(group) do
+                local sx,sy=ToScreen(p.x,p.y)
+                nvgCircle(ctx,sx,sy,style[5]*layout.scale)
+            end
+            local color=style[6]
+            nvgFillColor(ctx,nvgRGBA(color[1],color[2],color[3],color[4]))
+            nvgFill(ctx)
+            if style[1]=="frost" then
+                nvgStrokeColor(ctx,nvgRGBA(75,165,255,255))
+                nvgStrokeWidth(ctx,2*layout.scale)
+                nvgStroke(ctx)
+            end
+        end
+    end
+end
+
+function DrawProjectileTrails(ctx,group,length,width,color)
+    nvgBeginPath(ctx)
+    for _,p in ipairs(group) do
+        local sx,sy=ToScreen(p.x,p.y)
+        local px,py=ToScreen(p.prevX,p.prevY)
+        local dx,dy=sx-px,sy-py
+        local distance=math.max(0.001,math.sqrt(dx*dx+dy*dy))
+        nvgMoveTo(ctx,sx-dx/distance*length*layout.scale,sy-dy/distance*length*layout.scale)
+        nvgLineTo(ctx,sx,sy)
+    end
+    nvgStrokeColor(ctx,nvgRGBA(color[1],color[2],color[3],color[4]))
+    nvgStrokeWidth(ctx,width*layout.scale)
+    nvgStroke(ctx)
 end
 
 function DrawIceBlasts(ctx)
